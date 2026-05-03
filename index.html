@@ -660,13 +660,14 @@
     color: white;
     border: none;
     border-radius: 8px;
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
     cursor: pointer;
     align-items: center;
     justify-content: center;
     box-shadow: var(--shadow-md);
+    -webkit-tap-highlight-color: transparent;
   }
 
   .sidebar-overlay {
@@ -685,81 +686,121 @@
       transition: transform 0.25s ease;
       z-index: 1000;
     }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay.open { display: block; }
 
-    .sidebar.open {
-      transform: translateX(0);
-    }
-
-    .sidebar-overlay.open {
-      display: block;
-    }
-
+    /* Main content */
     .main {
       margin-left: 0 !important;
       padding: 16px !important;
-      padding-top: 60px !important;
+      padding-top: 64px !important;
       max-width: 100% !important;
+      width: 100% !important;
     }
 
+    /* Page header */
     .page-header {
       flex-direction: column;
       align-items: flex-start;
-      gap: 12px;
+      gap: 10px;
+      margin-bottom: 16px !important;
     }
-
     .page-header h2 { font-size: 18px; }
 
+    /* Cards */
     .card { padding: 14px !important; }
 
-    .btn { padding: 10px 16px; font-size: 14px; }
-    .btn-sm { padding: 8px 12px; font-size: 13px; }
+    /* Buttons - bigger touch targets */
+    .btn { padding: 11px 16px; font-size: 14px; min-height: 44px; }
+    .btn-sm { padding: 9px 14px; font-size: 13px; min-height: 38px; }
 
-    table { font-size: 12px; }
-    th, td { padding: 8px 6px !important; }
-
-    .modal { width: 95vw !important; max-width: 95vw !important; max-height: 90vh; }
-    .modal-body { padding: 16px !important; }
-
-    .form-row { flex-direction: column !important; }
-
-    .filter-tabs { flex-wrap: wrap; gap: 4px; }
-    .filter-tabs .tab { padding: 6px 10px; font-size: 12px; }
-
-    /* Dashboard grid */
-    .page-header + div > div[style*="grid"] {
-      grid-template-columns: 1fr 1fr !important;
-    }
-
-    /* Job cards */
-    div[style*="display:flex"][style*="gap:12px"] {
+    /* Modal - full screen on mobile */
+    .modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+    .modal {
+      width: 100vw !important;
+      max-width: 100vw !important;
+      max-height: 92vh !important;
+      border-radius: 16px 16px 0 0 !important;
+      display: flex !important;
       flex-direction: column !important;
     }
-
-    /* Sidebar bottom buttons */
-    .sidebar-bottom-grid { grid-template-columns: 1fr 1fr; }
-
-    /* Tables scroll horizontally */
-    .table-wrapper {
-      overflow-x: auto;
+    .modal-header {
+      padding: 16px !important;
+      flex-shrink: 0;
+    }
+    .modal-body {
+      padding: 16px !important;
+      overflow-y: auto !important;
+      flex: 1 !important;
       -webkit-overflow-scrolling: touch;
     }
-
-    /* Touch-friendly links and clickable items */
-    .sidebar nav a { padding: 12px 16px; font-size: 15px; }
-
-    /* Search/filter inputs */
-    input[type="text"], input[type="email"], input[type="url"], input[type="tel"],
-    input[type="date"], select, textarea {
-      font-size: 16px !important; /* prevents iOS zoom on focus */
+    .modal-footer {
+      padding: 12px 16px !important;
+      flex-shrink: 0;
+      position: sticky;
+      bottom: 0;
+      background: var(--bg);
     }
+    .modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    /* Forms */
+    .form-row { flex-direction: column !important; gap: 0 !important; }
+    .form-group input, .form-group select, .form-group textarea {
+      font-size: 16px !important; /* prevents iOS zoom */
+      padding: 12px !important;
+      min-height: 44px;
+    }
+    .form-group label { font-size: 13px; margin-bottom: 6px; }
+
+    /* Stats grid */
+    .stats-row { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+
+    /* Target grid */
+    .target-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+    .target-header { flex-direction: column; align-items: flex-start !important; gap: 8px; }
+    .target-card { padding: 14px !important; }
+
+    /* Tables */
+    table { font-size: 12px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    th, td { padding: 10px 8px !important; white-space: nowrap; }
+
+    /* Filter tabs */
+    .filter-tabs { flex-wrap: wrap; gap: 4px; }
+    .filter-tabs .tab { padding: 8px 12px; font-size: 13px; }
+
+    /* Checkboxes and interactive items */
+    .activity-check { padding: 10px 8px !important; min-height: 44px; }
+    .activity-check input[type="checkbox"] { width: 20px; height: 20px; min-width: 20px; }
+
+    /* Sidebar touch targets */
+    .sidebar nav a { padding: 14px 16px; font-size: 15px; }
+    .sidebar-bottom .sidebar-btn { padding: 10px 8px; font-size: 12px; min-height: 40px; }
+    .sidebar-bottom .sidebar-btn-full { padding: 12px 10px; min-height: 44px; }
+
+    /* Toast */
+    .toast { bottom: 20px !important; left: 16px !important; right: 16px !important; max-width: none !important; }
+
+    /* Search inputs */
+    input[type="text"], input[type="email"], input[type="url"], input[type="tel"],
+    input[type="date"], input[type="number"], select, textarea {
+      font-size: 16px !important;
+    }
+
+    /* Job cards layout */
+    .job-card { padding: 14px !important; }
+
+    /* Prevent horizontal overflow */
+    body { overflow-x: hidden; }
   }
 
   @media (max-width: 480px) {
-    .page-header + div > div[style*="grid"] {
-      grid-template-columns: 1fr !important;
-    }
-
-    .main { padding: 12px !important; padding-top: 56px !important; }
+    .stats-row { grid-template-columns: 1fr !important; }
+    .main { padding: 10px !important; padding-top: 58px !important; }
+    .page-header h2 { font-size: 16px; }
+    .modal { max-height: 95vh !important; }
   }
 
 </style>
@@ -2624,18 +2665,37 @@ function requestMoreJobs() {
 
   prompt += '\n\nFind ACTUALLY open positions with verified, working application links. Score them against my dream job criteria.';
 
-  // Use sendPrompt to send to Cowork
+  // Use sendPrompt to send to Cowork (desktop)
   if (typeof window.sendPrompt === 'function') {
     window.sendPrompt(prompt);
-  } else if (typeof window.parent !== 'undefined' && typeof window.parent.postMessage === 'function') {
-    // Fallback: copy to clipboard
-    navigator.clipboard.writeText(prompt).then(() => {
-      toast('Search profile copied to clipboard - paste in Cowork');
-    }).catch(() => {
-      // Show in a modal as last resort
-      openModal('Copy to Cowork', '<div style="font-size:12px;"><p>Paste this in Cowork:</p><textarea style="width:100%;min-height:120px;font-size:11px;" readonly>' + escHtml(prompt) + '</textarea></div>', '<button class="btn btn-primary" onclick="closeModal()">OK</button>');
-    });
+    return;
   }
+
+  // Try clipboard, then show modal with copy button and Claude.ai link
+  const claudeUrl = 'https://claude.ai/new?q=' + encodeURIComponent(prompt.substring(0, 2000));
+  const modalHtml = '<div style="font-size:13px;">' +
+    '<p style="margin-bottom:12px;">Choose how to search for jobs:</p>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;">' +
+    '<a href="' + claudeUrl + '" target="_blank" class="btn btn-primary" style="text-align:center;text-decoration:none;justify-content:center;">Open in Claude.ai</a>' +
+    '<button class="btn btn-ghost" onclick="copyJobPrompt()">Copy prompt to clipboard</button>' +
+    '</div>' +
+    '<textarea id="jobPromptText" style="width:100%;min-height:100px;font-size:11px;margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:6px;" readonly>' + escHtml(prompt) + '</textarea>' +
+    '</div>';
+  openModal('Find More Jobs', modalHtml, '<button class="btn btn-ghost" onclick="closeModal()">Close</button>');
+
+  // Store prompt for copy button
+  window._jobPrompt = prompt;
+}
+
+function copyJobPrompt() {
+  const text = window._jobPrompt || document.getElementById('jobPromptText').value;
+  navigator.clipboard.writeText(text).then(() => {
+    toast('Prompt copied to clipboard');
+  }).catch(() => {
+    // Select the textarea so user can manually copy
+    const ta = document.getElementById('jobPromptText');
+    if (ta) { ta.select(); toast('Select all and copy manually'); }
+  });
 }
 
 function quickAddJob() {
