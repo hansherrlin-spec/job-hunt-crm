@@ -3568,7 +3568,7 @@ function renderJobSearchPanel() {
     // Search button + results area
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
     '<button class="btn btn-primary" style="font-size:13px;padding:8px 20px;" onclick="executeJobSearch()">&#128269; Search</button>' +
-    '<span style="font-size:11px;color:var(--text-light);">Searches all selected sources and shows results below.</span>' +
+    '<span style="font-size:11px;color:var(--text-light);">Platsbanken: API search with results below. Other sources: opens in browser tabs.</span>' +
     '</div>' +
     '<div id="searchResultsArea"></div>' +
     '</div>';
@@ -3703,60 +3703,59 @@ function requestMoreJobs() {
 async function runMultiSourceSearch(terms, location, sources) {
   var allResults = [];
   var existingUrls = new Set((DATA.savedJobs || []).map(function(j) { return (j.url || '').toLowerCase(); }));
-  var progressEl = document.getElementById('searchProgress');
   var resultsArea = document.getElementById('searchResultsArea');
-  var completed = 0;
-  var totalSources = sources.length;
 
-  function updateProgress(sourceName, status) {
-    completed++;
-    var isError = status === 'error' || status === '0 found';
-    var statusColor = isError ? 'var(--text-light)' : 'var(--success)';
-    var icon = isError ? '&#9675;' : '&#9679;';
-    if (progressEl) progressEl.innerHTML += '<div style="color:' + statusColor + ';">' + icon + ' ' + escHtml(sourceName) + ': ' + status + '</div>';
-    var pbar = document.getElementById('searchProgressBar');
-    var plabel = document.getElementById('searchProgressLabel');
-    if (pbar) pbar.style.width = Math.round((completed / totalSources) * 100) + '%';
-    if (plabel) plabel.textContent = completed + ' / ' + totalSources + ' sources checked';
+  // Split sources into API-searchable (Platsbanken) vs browser-open (everything else)
+  var apiSources = sources.filter(function(s) { return s.type === 'board' && s.id === 'platsbanken'; });
+  var browserSources = sources.filter(function(s) { return !(s.type === 'board' && s.id === 'platsbanken'); });
+
+  var totalApi = apiSources.length;
+  var totalBrowser = browserSources.length;
+
+  if (resultsArea) {
+    resultsArea.innerHTML = '<div style="text-align:center;padding:20px;">' +
+      '<div style="font-size:28px;margin-bottom:8px;">&#128269;</div>' +
+      '<div style="color:var(--text-light);margin-bottom:12px;">Searching Platsbanken API' + (totalBrowser > 0 ? ' + opening ' + totalBrowser + ' sites in browser...' : '...') + '</div>' +
+      '<div style="width:100%;max-width:300px;margin:0 auto 8px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden;">' +
+      '<div id="searchProgressBar" style="width:0%;height:100%;background:var(--primary);border-radius:3px;transition:width 0.3s ease;"></div></div>' +
+      '<div id="searchProgressLabel" style="font-size:11px;color:var(--text-muted);">Searching...</div>' +
+      '<div id="searchProgress" style="font-size:11px;color:var(--text-muted);margin-top:6px;max-height:100px;overflow-y:auto;"></div></div>';
   }
 
-  // Process each source in parallel
-  var promises = sources.map(async function(src) {
+  // Phase 1: API search (Platsbanken)
+  if (apiSources.length > 0) {
+    var pbar = document.getElementById('searchProgressBar');
+    var plabel = document.getElementById('searchProgressLabel');
+    if (plabel) plabel.textContent = 'Searching Platsbanken API...';
+    if (pbar) pbar.style.width = '30%';
     try {
-      if (src.type === 'board' && src.id === 'platsbanken') {
-        var results = await searchPlatsbanken(terms, location, existingUrls);
-        updateProgress('Platsbanken', results.length + ' found');
-        return results;
-      }
-      if (src.type === 'board' && src.id === 'linkedin') {
-        var results = await searchLinkedIn(terms, location, existingUrls);
-        updateProgress('LinkedIn', results.length + ' found');
-        return results;
-      }
-      if (src.type === 'board' && src.id === 'thehub') {
-        var results = await searchTheHub(terms, location, existingUrls);
-        updateProgress('The Hub', results.length + ' found');
-        return results;
-      }
-      if (src.type === 'board' && (src.id === 'indeed' || src.id === 'meetfrank')) {
-        var results = await searchViaCorsProxy(src.id === 'indeed' ? 'https://se.indeed.com/jobb?q=' + encodeURIComponent(terms[0] + ' ' + location) : 'https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg', src.id, existingUrls);
-        updateProgress(src.id === 'indeed' ? 'Indeed' : 'MeetFrank', results.length + ' found');
-        return results;
-      }
-      if (src.type === 'hh') {
-        var results = await searchHeadhunterSite(src.url, src.firm, terms, existingUrls);
-        updateProgress(src.firm, results.length + ' found');
-        return results;
-      }
+      var results = await searchPlatsbanken(terms, location, existingUrls);
+      allResults = allResults.concat(results);
+      if (pbar) pbar.style.width = '60%';
+      var progressEl = document.getElementById('searchProgress');
+      if (progressEl) progressEl.innerHTML = '<div style="color:' + (results.length > 0 ? 'var(--success)' : 'var(--text-light)') + ';">' + (results.length > 0 ? '&#9679;' : '&#9675;') + ' Platsbanken API: ' + results.length + ' found</div>';
     } catch (e) {
-      updateProgress(src.firm || src.id || 'Source', 'error');
-      return [];
+      var progressEl = document.getElementById('searchProgress');
+      if (progressEl) progressEl.innerHTML = '<div style="color:var(--text-light);">&#9675; Platsbanken API: error</div>';
     }
-    return [];
-  });
+  }
 
-  var resultSets = await Promise.all(promises);
-  resultSets.forEach(function(set) { allResults = allResults.concat(set); });
+  // Phase 2: Open browser tabs for all other sources
+  var openedTabs = [];
+  if (browserSources.length > 0) {
+    openedTabs = openBrowserSources(browserSources, terms, location);
+    var progressEl = document.getElementById('searchProgress');
+    if (progressEl) {
+      openedTabs.forEach(function(name) {
+        progressEl.innerHTML += '<div style="color:var(--primary);">&#8599; ' + escHtml(name) + ': opened in browser</div>';
+      });
+    }
+  }
+
+  var pbar = document.getElementById('searchProgressBar');
+  var plabel = document.getElementById('searchProgressLabel');
+  if (pbar) pbar.style.width = '100%';
+  if (plabel) plabel.textContent = 'Done - ' + allResults.length + ' API results' + (openedTabs.length > 0 ? ', ' + openedTabs.length + ' tabs opened' : '');
 
   // Deduplicate by company+role
   var seen = new Set();
@@ -3788,7 +3787,10 @@ async function runMultiSourceSearch(terms, location, sources) {
 
   if (allResults.length === 0) {
     if (resultsArea) {
-      resultsArea.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:8px;">&#128204;</div><p style="color:var(--text-light);">No new matches found across selected sources.</p></div>';
+      var msg = openedTabs.length > 0
+        ? '<p style="color:var(--text-light);">No API matches found, but <strong>' + openedTabs.length + ' job sites</strong> were opened in your browser.</p><p style="font-size:11px;color:var(--text-muted);margin-top:4px;">Browse the tabs, then use the <strong>Paste</strong> button or paste a job link above to add jobs you find.</p>'
+        : '<p style="color:var(--text-light);">No new matches found from the Platsbanken API.</p>';
+      resultsArea.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:8px;">&#128204;</div>' + msg + '</div>';
     }
     return;
   }
@@ -3796,7 +3798,7 @@ async function runMultiSourceSearch(terms, location, sources) {
   // Show results with limit selector and add button
   var defaultLimit = Math.min(10, allResults.length);
   var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
-    '<p style="font-size:12px;color:var(--text-light);margin:0;">Found ' + allResults.length + ' jobs across all sources:</p>' +
+    '<p style="font-size:12px;color:var(--text-light);margin:0;">Found ' + allResults.length + ' jobs from Platsbanken' + (openedTabs.length > 0 ? ' + ' + openedTabs.length + ' sites opened in browser' : '') + ':</p>' +
     '<div style="display:flex;align-items:center;gap:8px;">' +
     '<label style="font-size:11px;color:var(--text-light);white-space:nowrap;">Add top <select id="jobAddLimit" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);">';
   for (var n = 1; n <= Math.min(10, allResults.length); n++) {
@@ -3830,31 +3832,61 @@ async function runMultiSourceSearch(terms, location, sources) {
 
 async function searchPlatsbanken(terms, location, existingUrls) {
   var results = [];
-  var queries = terms.slice(0, 4).map(function(t) { return t + ' ' + location; });
-  for (var qi = 0; qi < queries.length; qi++) {
+  var seenUrls = new Set();
+  // Swedish equivalents for common executive titles
+  var termExpansions = {
+    'CCO': ['CCO','Chief Commercial Officer','Kommersiell chef','Kommersiell direktör'],
+    'COO': ['COO','Chief Operating Officer','Operativ chef','Driftchef'],
+    'CEO': ['CEO','VD','Verkställande direktör','Chief Executive Officer'],
+    'VP Sales': ['VP Sales','Försäljningschef','Sales Director','Säljchef'],
+    'Head of Sales': ['Head of Sales','Försäljningschef','Säljchef','Sales Manager'],
+    'Head of Commercial': ['Head of Commercial','Kommersiell chef','Commercial Director','Commercial Manager'],
+    'Head of Growth': ['Head of Growth','Growth Manager','Tillväxtchef','Growth Lead']
+  };
+  // Build search queries - use the term alone (let municipality filter handle location)
+  var queries = [];
+  terms.forEach(function(t) {
+    var expansions = termExpansions[t];
+    if (expansions) {
+      expansions.forEach(function(e) { queries.push(e); });
+    } else {
+      queries.push(t);
+    }
+  });
+  // Deduplicate and limit
+  queries = queries.filter(function(q, i) { return queries.indexOf(q) === i; }).slice(0, 15);
+  // Search each term both with and without location for broader coverage
+  var allQueries = [];
+  queries.forEach(function(q) {
+    allQueries.push(q + ' ' + location); // e.g. "Försäljningschef Malmö"
+    allQueries.push(q + ' Skåne'); // broader regional
+    allQueries.push(q); // nationwide (will still match Malmö jobs)
+  });
+  // Deduplicate
+  allQueries = allQueries.filter(function(q, i) { return allQueries.indexOf(q) === i; }).slice(0, 30);
+  for (var qi = 0; qi < allQueries.length; qi++) {
     try {
-      var resp = await fetch('https://jobsearch.api.jobtechdev.se/search?q=' + encodeURIComponent(queries[qi]) + '&limit=10&offset=0', { headers: { 'Accept': 'application/json' } });
+      var apiUrl = 'https://jobsearch.api.jobtechdev.se/search?q=' + encodeURIComponent(allQueries[qi]) + '&limit=10&offset=0';
+      var resp = await fetch(apiUrl, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) });
       if (!resp.ok) continue;
       var data = await resp.json();
       (data.hits || []).forEach(function(hit) {
         var url = hit.webpage_url || (hit.application_details && hit.application_details.url) || '';
-        if (url && existingUrls.has(url.toLowerCase())) return;
+        if (!url || seenUrls.has(url.toLowerCase()) || existingUrls.has(url.toLowerCase())) return;
+        seenUrls.add(url.toLowerCase());
         var emp = (hit.employer && hit.employer.name) || '';
         var headline = hit.headline || '';
         var desc = (hit.description && hit.description.text) ? hit.description.text.substring(0, 500) : '';
-
         // Detect recruiter
         var recruiterKw = ['rekrytering','recruit','headhunt','search','bemanning','staffing','konsult','urval','hanborg','hays','randstad','adecco','manpower'];
         var isRec = recruiterKw.some(function(k) { return emp.toLowerCase().includes(k); });
         if (!isRec && DATA.headhunters) isRec = DATA.headhunters.some(function(h) { return emp.toLowerCase().includes(h.firm.toLowerCase()); });
-
         var company = emp, source = 'Platsbanken';
         if (isRec) {
           source = 'Platsbanken (via ' + emp + ')';
           var m = headline.match(/(?:at|to|till|hos|for|@)\s+(.+?)(?:\s*[-,]|$)/i);
           company = m ? m[1].trim() : '(via ' + emp + ')';
         }
-
         results.push({ company: company, role: headline, url: url, location: (hit.workplace_address && hit.workplace_address.municipality) || location, description: desc, deadline: hit.application_deadline || '', industry: (hit.occupation && hit.occupation.label) || '', source: source });
       });
     } catch (e) {}
@@ -3862,158 +3894,38 @@ async function searchPlatsbanken(terms, location, existingUrls) {
   return results;
 }
 
-async function searchLinkedIn(terms, location, existingUrls) {
-  var results = [];
-  var PROXY = 'https://api.allorigins.win/raw?url=';
-  for (var i = 0; i < Math.min(terms.length, 2); i++) {
-    try {
-      var searchUrl = 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=' + encodeURIComponent(terms[i]) + '&location=' + encodeURIComponent(location + ', Sweden') + '&start=0';
-      var resp = await fetch(PROXY + encodeURIComponent(searchUrl), { signal: AbortSignal.timeout(8000) });
-      if (!resp.ok) continue;
-      var html = await resp.text();
-      // Parse LinkedIn job cards from HTML
-      var parser = new DOMParser();
-      var doc = parser.parseFromString(html, 'text/html');
-      var cards = doc.querySelectorAll('.base-card, .job-search-card, li');
-      cards.forEach(function(card) {
-        var titleEl = card.querySelector('.base-search-card__title, h3, h4');
-        var compEl = card.querySelector('.base-search-card__subtitle, h4, .hidden-nested-link');
-        var locEl = card.querySelector('.job-search-card__location, .base-search-card__metadata span');
-        var linkEl = card.querySelector('a[href*="/jobs/view/"]') || card.querySelector('a');
-        if (!titleEl || !linkEl) return;
-        var role = (titleEl.textContent || '').trim();
-        var company = compEl ? (compEl.textContent || '').trim() : '';
-        var loc = locEl ? (locEl.textContent || '').trim() : location;
-        var url = (linkEl.getAttribute('href') || '').split('?')[0];
-        if (!role || !url) return;
-        if (existingUrls.has(url.toLowerCase())) return;
-        results.push({ company: company, role: role, url: url, location: loc, description: '', deadline: '', industry: '', source: 'LinkedIn' });
-      });
-    } catch (e) {}
+// Browser-based sources: generate search URLs and open in tabs
+function buildSearchUrl(source, terms, location) {
+  var q = encodeURIComponent(terms[0] + ' ' + location);
+  switch (source) {
+    case 'linkedin':
+      return 'https://www.linkedin.com/jobs/search/?keywords=' + encodeURIComponent(terms.slice(0,3).join(' OR ')) + '&location=' + encodeURIComponent(location + ', Sweden') + '&f_TPR=r604800';
+    case 'thehub':
+      return 'https://thehub.io/jobs?search=' + encodeURIComponent(terms[0]) + '&location=sweden';
+    case 'indeed':
+      return 'https://se.indeed.com/jobb?q=' + q + '&l=' + encodeURIComponent(location);
+    case 'meetfrank':
+      return 'https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg';
+    default:
+      return '';
   }
-  return results;
 }
 
-async function searchTheHub(terms, location, existingUrls) {
-  var results = [];
-  var PROXY = 'https://api.allorigins.win/raw?url=';
-  try {
-    var url = 'https://thehub.io/jobs?search=' + encodeURIComponent(terms[0]) + '&location=sweden';
-    var resp = await fetch(PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) return results;
-    var html = await resp.text();
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html, 'text/html');
-    doc.querySelectorAll('a[href*="/jobs/"]').forEach(function(el) {
-      var href = el.getAttribute('href') || '';
-      if (!href.includes('/jobs/') || href.endsWith('/jobs') || href.endsWith('/jobs/')) return;
-      var fullUrl = href.startsWith('http') ? href : 'https://thehub.io' + href;
-      if (existingUrls.has(fullUrl.toLowerCase())) return;
-      var title = (el.textContent || '').trim().substring(0, 120);
-      // Try to split "Role at Company" or just use title
-      var parts = title.split(/\s+at\s+|\s+-\s+/i);
-      var role = parts[0] || title;
-      var company = parts[1] || '';
-      if (role.length > 5 && role.length < 100) {
-        results.push({ company: company, role: role, url: fullUrl, location: '', description: '', deadline: '', industry: '', source: 'The Hub' });
-      }
-    });
-  } catch (e) {}
-  return results.slice(0, 10);
-}
-
-async function searchViaCorsProxy(pageUrl, sourceName, existingUrls) {
-  // Generic: fetch page, try to extract links/titles
-  var results = [];
-  var PROXY = 'https://api.allorigins.win/raw?url=';
-  try {
-    var resp = await fetch(PROXY + encodeURIComponent(pageUrl), { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) return results;
-    var html = await resp.text();
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html, 'text/html');
-    // Look for job-like links
-    doc.querySelectorAll('a').forEach(function(el) {
-      var href = el.getAttribute('href') || '';
-      var text = (el.textContent || '').trim();
-      if (text.length > 10 && text.length < 120 && /director|chief|head|manager|lead|sales|commercial|vp|coo|cco|ceo/i.test(text)) {
-        var fullUrl = href.startsWith('http') ? href : pageUrl.split('/').slice(0, 3).join('/') + href;
-        if (!existingUrls.has(fullUrl.toLowerCase())) {
-          results.push({ company: '', role: text, url: fullUrl, location: '', description: '', deadline: '', industry: '', source: sourceName.charAt(0).toUpperCase() + sourceName.slice(1) });
-        }
-      }
-    });
-  } catch (e) {}
-  return results.slice(0, 8);
-}
-
-async function searchHeadhunterSite(siteUrl, firmName, terms, existingUrls) {
-  var results = [];
-  var proxies = [
-    'https://api.allorigins.win/raw?url=',
-    'https://corsproxy.io/?'
-  ];
-  var html = '';
-  try {
-    for (var pi = 0; pi < proxies.length; pi++) {
-      try {
-        var resp = await fetch(proxies[pi] + encodeURIComponent(siteUrl), { signal: AbortSignal.timeout(8000) });
-        if (resp.ok) {
-          html = await resp.text();
-          if (html.length > 500) break;
-        }
-      } catch(pe) {}
+function openBrowserSources(sources, terms, location) {
+  var opened = [];
+  sources.forEach(function(src) {
+    var url = '';
+    if (src.type === 'board') {
+      url = buildSearchUrl(src.id, terms, location);
+    } else if (src.type === 'hh') {
+      url = src.url || '';
     }
-    if (!html || html.length < 500) return results;
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html, 'text/html');
-
-    // Strategy 1: Look for JSON-LD structured data
-    doc.querySelectorAll('script[type="application/ld+json"]').forEach(function(script) {
-      try {
-        var ld = JSON.parse(script.textContent);
-        var items = Array.isArray(ld) ? ld : (ld['@graph'] || [ld]);
-        items.forEach(function(item) {
-          if (item['@type'] === 'JobPosting') {
-            var url = item.url || siteUrl;
-            if (!existingUrls.has(url.toLowerCase())) {
-              results.push({
-                company: (item.hiringOrganization && item.hiringOrganization.name) || '',
-                role: item.title || '',
-                url: url,
-                location: (item.jobLocation && item.jobLocation.address && item.jobLocation.address.addressLocality) || '',
-                description: (item.description || '').replace(/<[^>]*>/g, '').substring(0, 400),
-                deadline: item.validThrough || '',
-                industry: item.industry || '',
-                source: firmName
-              });
-            }
-          }
-        });
-      } catch (e) {}
-    });
-
-    // Strategy 2: Parse job listing links from HTML
-    if (results.length === 0) {
-      var baseDomain = siteUrl.split('/').slice(0, 3).join('/');
-      doc.querySelectorAll('a').forEach(function(el) {
-        var href = el.getAttribute('href') || '';
-        var text = (el.textContent || '').trim();
-        // Filter for job-like links (has meaningful text, links to job detail pages)
-        if (text.length < 8 || text.length > 150) return;
-        if (/cookie|integritet|privacy|om oss|about|kontakt|contact|logga in|login|blog/i.test(text)) return;
-        // Check if it looks like a job title or contains relevant keywords
-        var isJobLink = /jobb|uppdrag|position|vacancy|career|lediga|tjanst|tjänst|opdrag/i.test(href) ||
-          /director|chief|head|manager|sales|commercial|vp|coo|cco|ceo|chef|ansvarig|ledare/i.test(text);
-        if (!isJobLink) return;
-        var fullUrl = href.startsWith('http') ? href : baseDomain + (href.startsWith('/') ? '' : '/') + href;
-        if (existingUrls.has(fullUrl.toLowerCase())) return;
-        if (results.some(function(r) { return r.role === text; })) return;
-        results.push({ company: '', role: text, url: fullUrl, location: '', description: '', deadline: '', industry: '', source: firmName });
-      });
+    if (url) {
+      window.open(url, '_blank');
+      opened.push(src.firm || src.id || 'source');
     }
-  } catch (e) {}
-  return results.slice(0, 10);
+  });
+  return opened;
 }
 
 function addAllSearchResults() {
