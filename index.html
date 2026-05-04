@@ -3670,8 +3670,9 @@ function getHeadhunterJobLinks(titles, location) {
 }
 
 function requestMoreJobs() {
-  // Navigate to Job Board, open the unified search panel, and auto-search
+  // Navigate to Job Board with 'all' filter, then open the unified search panel
   currentView = 'jobBoard';
+  jobBoardFilter = 'all';
   render();
   setTimeout(function() {
     var panel = document.getElementById('jobSearchPanel');
@@ -4179,45 +4180,232 @@ function addSearchResult(index) {
   if (btn) { btn.textContent = 'Added'; btn.disabled = true; btn.style.opacity = '0.5'; }
 }
 
-function quickAddJob() {
+async function quickAddJob() {
   const input = document.getElementById('quickJobUrl');
   const url = input.value.trim();
   if (!url) return;
 
   if (!DATA.savedJobs) DATA.savedJobs = [];
+  var fullUrl = url.startsWith('http') ? url : 'https://' + url;
 
-  // Try to extract a readable title from the URL
-  let title = '';
-  try {
-    const u = new URL(url.startsWith('http') ? url : 'https://' + url);
-    const host = u.hostname.replace('www.', '');
-    const path = decodeURIComponent(u.pathname).replace(/\//g, ' ').replace(/-/g, ' ').trim();
-    title = host + (path ? ' - ' + path.slice(0, 80) : '');
-  } catch(e) {
-    title = url.slice(0, 80);
+  // Show loading modal
+  openModal('Analyzing Job Ad', '<div style="text-align:center;padding:30px;"><div style="font-size:32px;margin-bottom:12px;">&#128270;</div><p style="color:var(--text-light);">Fetching and analyzing job ad...</p><div id="analyzeProgress" style="font-size:11px;color:var(--text-muted);margin-top:8px;"></div></div>', '');
+
+  var parsed = await fetchAndParseJobAd(fullUrl);
+  input.value = '';
+
+  if (!parsed) {
+    // Fallback: just save with URL-derived title
+    var title = '';
+    try {
+      var u = new URL(fullUrl);
+      var host = u.hostname.replace('www.', '');
+      var path = decodeURIComponent(u.pathname).replace(/\//g, ' ').replace(/-/g, ' ').trim();
+      title = host + (path ? ' - ' + path.slice(0, 80) : '');
+    } catch(e) { title = url.slice(0, 80); }
+
+    var id = genId();
+    DATA.savedJobs.push({ id: id, url: fullUrl, title: title, company: '', role: '', industry: '', note: '', description: '', reviewed: false, applied: false, addedAt: today() });
+    saveData(DATA);
+    closeModal();
+    toast('Could not fetch ad - saved with basic info. Edit to add details.');
+    render();
+    setTimeout(function() { editJobNote(id); }, 150);
+    return;
   }
 
-  const id = genId();
-  DATA.savedJobs.push({
-    id,
-    url: url.startsWith('http') ? url : 'https://' + url,
-    title,
-    company: '',
-    role: '',
-    industry: '',
-    note: '',
-    description: '',
-    reviewed: false,
-    applied: false,
-    addedAt: today()
-  });
-  saveData(DATA);
-  input.value = '';
-  toast('Job saved - add company & role for relevance scoring');
-  render();
+  // Score the parsed job
+  var tempJob = { id: 'temp', url: fullUrl, title: (parsed.company ? parsed.company + ' - ' : '') + parsed.role, company: parsed.company, role: parsed.role, industry: parsed.industry || '', location: parsed.location || '', note: parsed.description || '', description: parsed.description || '', reviewed: false, applied: false, addedAt: today() };
+  var rel = getRelevanceScore(tempJob);
+  var prefAdj = getPreferenceAdjustment(tempJob);
+  var totalScore = Math.min(100, Math.max(0, rel.score + prefAdj.adj));
+  var tierLabel = totalScore >= 75 ? 'A-Tier' : totalScore >= 50 ? 'B-Tier' : totalScore >= 25 ? 'C-Tier' : 'D-Tier';
+  var tierColor = totalScore >= 75 ? 'var(--success)' : totalScore >= 50 ? 'var(--warning)' : totalScore >= 25 ? 'var(--primary)' : 'var(--text-light)';
 
-  // Immediately open the edit form so they can fill in details
-  setTimeout(() => editJobNote(id), 150);
+  // Build analysis modal
+  var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : {};
+  var dims = [
+    { key: 'role', label: 'Role Fit', score: rel.dims.role, max: 25 },
+    { key: 'industry', label: 'Industry', score: rel.dims.industry, max: 15 },
+    { key: 'location', label: 'Location', score: rel.dims.location, max: 15 },
+    { key: 'scope', label: 'Scope/Level', score: rel.dims.scope, max: 20 },
+    { key: 'company', label: 'Company', score: rel.dims.company, max: 10 }
+  ];
+
+  var dimBars = dims.map(function(d) {
+    var pct = Math.round((d.score / d.max) * 100);
+    var barColor = pct >= 75 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : pct >= 25 ? 'var(--primary)' : 'var(--danger)';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+      '<span style="width:90px;font-size:11px;color:var(--text-light);">' + d.label + '</span>' +
+      '<div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden;">' +
+      '<div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.3s;"></div></div>' +
+      '<span style="width:50px;font-size:11px;font-weight:600;text-align:right;">' + d.score + '/' + d.max + '</span></div>';
+  }).join('');
+
+  var prefLine = '';
+  if (prefAdj.adj !== 0) {
+    prefLine = '<div style="font-size:11px;color:' + (prefAdj.adj > 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">Preference adjustment: ' + (prefAdj.adj > 0 ? '+' : '') + prefAdj.adj + ' (' + (prefAdj.reasons || []).join(', ') + ')</div>';
+  }
+
+  var analysisHtml = '<div style="font-size:13px;">' +
+    // Header with score
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:var(--bg);border-radius:10px;border-left:4px solid ' + tierColor + ';">' +
+    '<div style="text-align:center;min-width:60px;">' +
+    '<div style="font-size:28px;font-weight:700;color:' + tierColor + ';">' + totalScore + '</div>' +
+    '<div style="font-size:10px;font-weight:600;color:' + tierColor + ';">' + tierLabel + '</div></div>' +
+    '<div style="flex:1;min-width:0;">' +
+    '<div style="font-weight:700;font-size:15px;margin-bottom:2px;">' + escHtml(parsed.role || 'Unknown Role') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);">' + escHtml(parsed.company || 'Unknown Company') +
+    (parsed.location ? ' - ' + escHtml(parsed.location) : '') + '</div>' +
+    (parsed.deadline ? '<div style="font-size:11px;color:var(--warning);margin-top:2px;">Deadline: ' + escHtml(parsed.deadline) + '</div>' : '') +
+    '</div></div>' +
+
+    // Scoring breakdown
+    '<div style="margin-bottom:16px;">' +
+    '<div style="font-weight:600;margin-bottom:8px;">Scoring Breakdown</div>' +
+    dimBars +
+    '<div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);">' +
+    '<span style="font-size:12px;font-weight:600;">Total Score</span>' +
+    '<span style="font-size:12px;font-weight:700;color:' + tierColor + ';">' + totalScore + '/100</span></div>' +
+    prefLine + '</div>' +
+
+    // Dream job comparison
+    '<div style="margin-bottom:16px;">' +
+    '<div style="font-weight:600;margin-bottom:8px;">Dream Job Match</div>' +
+    '<div style="font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+    '<div style="padding:8px;background:var(--bg);border-radius:6px;"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;margin-bottom:2px;">Target Roles</div>' + escHtml(dj.title || 'Not set') + '</div>' +
+    '<div style="padding:8px;background:var(--bg);border-radius:6px;"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;margin-bottom:2px;">This Role</div>' + escHtml(parsed.role || '-') + '</div>' +
+    '<div style="padding:8px;background:var(--bg);border-radius:6px;"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;margin-bottom:2px;">Target Location</div>' + escHtml(dj.location || 'Not set') + '</div>' +
+    '<div style="padding:8px;background:var(--bg);border-radius:6px;"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;margin-bottom:2px;">This Location</div>' + escHtml(parsed.location || '-') + '</div>' +
+    '</div></div>' +
+
+    // Description summary
+    (parsed.description ? '<div style="margin-bottom:12px;">' +
+    '<div style="font-weight:600;margin-bottom:6px;">Job Description</div>' +
+    '<div style="font-size:12px;color:var(--text-light);max-height:150px;overflow-y:auto;padding:8px;background:var(--bg);border-radius:6px;white-space:pre-wrap;">' + escHtml(parsed.description.substring(0, 1500)) + '</div></div>' : '') +
+
+    '</div>';
+
+  var footerHtml = '<div style="display:flex;gap:8px;">' +
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveAnalyzedJob()">Add to Job Board</button></div>';
+
+  // Store parsed data for saving
+  window._analyzedJob = tempJob;
+  window._analyzedJob.id = genId();
+
+  openModal('Job Analysis', analysisHtml, footerHtml);
+}
+
+function saveAnalyzedJob() {
+  if (!window._analyzedJob) return;
+  DATA.savedJobs = DATA.savedJobs || [];
+  DATA.savedJobs.push(window._analyzedJob);
+  saveData(DATA);
+  closeModal();
+  toast('Job added to your board!');
+  render();
+  window._analyzedJob = null;
+}
+
+async function fetchAndParseJobAd(url) {
+  var PROXY = 'https://api.allorigins.win/raw?url=';
+  var progressEl = document.getElementById('analyzeProgress');
+
+  try {
+    if (progressEl) progressEl.textContent = 'Fetching page...';
+    var resp = await fetch(PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return null;
+    var html = await resp.text();
+    if (progressEl) progressEl.textContent = 'Parsing job details...';
+
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(html, 'text/html');
+
+    var result = { company: '', role: '', location: '', industry: '', description: '', deadline: '' };
+
+    // Try JSON-LD first (best structured data)
+    var jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+    for (var i = 0; i < jsonLdScripts.length; i++) {
+      try {
+        var ld = JSON.parse(jsonLdScripts[i].textContent);
+        // Handle arrays
+        if (Array.isArray(ld)) ld = ld.find(function(item) { return item['@type'] === 'JobPosting'; }) || ld[0];
+        if (ld['@graph']) ld = (ld['@graph'].find(function(item) { return item['@type'] === 'JobPosting'; })) || ld;
+
+        if (ld['@type'] === 'JobPosting') {
+          result.role = ld.title || ld.name || '';
+          if (ld.hiringOrganization) {
+            result.company = typeof ld.hiringOrganization === 'string' ? ld.hiringOrganization : (ld.hiringOrganization.name || '');
+          }
+          if (ld.jobLocation) {
+            var loc = Array.isArray(ld.jobLocation) ? ld.jobLocation[0] : ld.jobLocation;
+            if (loc.address) {
+              var addr = typeof loc.address === 'string' ? loc.address : (loc.address.addressLocality || loc.address.addressRegion || '');
+              result.location = addr;
+            } else if (loc.name) {
+              result.location = loc.name;
+            }
+          }
+          result.description = (ld.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 2000);
+          if (ld.validThrough) result.deadline = ld.validThrough.substring(0, 10);
+          if (ld.industry) result.industry = ld.industry;
+          if (result.role) return result;
+        }
+      } catch(e) { /* skip bad JSON-LD */ }
+    }
+
+    // Fallback: parse meta tags and page content
+    var ogTitle = (doc.querySelector('meta[property="og:title"]') || {}).content || '';
+    var ogDesc = (doc.querySelector('meta[property="og:description"]') || {}).content || '';
+    var pageTitle = (doc.querySelector('title') || {}).textContent || '';
+    var h1 = (doc.querySelector('h1') || {}).textContent || '';
+
+    // Try to extract role from title/h1
+    result.role = h1.trim() || ogTitle.trim() || pageTitle.trim();
+    // Clean up common suffixes
+    result.role = result.role.replace(/\s*[-|]\s*(LinkedIn|Indeed|Platsbanken|The Hub|MeetFrank).*$/i, '').trim();
+
+    // Try to extract company
+    var companyMeta = doc.querySelector('meta[property="og:site_name"]');
+    if (companyMeta && companyMeta.content) result.company = companyMeta.content;
+
+    // Try common selectors for company name
+    if (!result.company) {
+      var companyEl = doc.querySelector('.company-name, .employer-name, [data-company], .topcard__org-name-link, .job-details-jobs-unified-top-card__company-name');
+      if (companyEl) result.company = companyEl.textContent.trim();
+    }
+
+    // Try to split "Role at Company" patterns
+    if (!result.company && result.role) {
+      var atMatch = result.role.match(/^(.+?)\s+(?:at|@|hos|till)\s+(.+)$/i);
+      if (atMatch) {
+        result.role = atMatch[1].trim();
+        result.company = atMatch[2].trim();
+      }
+    }
+
+    // Extract description from page body
+    var bodyText = '';
+    var descEl = doc.querySelector('.description, .job-description, [class*="description"], article, .content, main');
+    if (descEl) bodyText = descEl.textContent;
+    if (!bodyText) bodyText = (doc.body || {}).textContent || '';
+    result.description = bodyText.replace(/\s+/g, ' ').trim().substring(0, 2000);
+    if (!result.description && ogDesc) result.description = ogDesc;
+
+    // Try to find location in content
+    if (!result.location) {
+      var locEl = doc.querySelector('.location, .job-location, [class*="location"]');
+      if (locEl) result.location = locEl.textContent.trim();
+    }
+
+    if (progressEl) progressEl.textContent = 'Analysis complete!';
+    return result.role ? result : null;
+
+  } catch(e) {
+    if (progressEl) progressEl.textContent = 'Could not fetch page: ' + e.message;
+    return null;
+  }
 }
 
 function markJobReviewed(id) {
