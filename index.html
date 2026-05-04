@@ -3134,6 +3134,7 @@ function relevanceBadge(score) {
 // ---- JOB BOARD with Qualify/Disqualify ----
 let jobBoardFilter = 'toReview';
 let qualifyingJobId = null; // which job is showing the qualify panel
+let showSearchPanel = false; // whether the search panel is open
 
 const QUALIFY_REASONS = [
   { id: 'role_fit', label: 'Right role level', type: 'positive' },
@@ -3333,7 +3334,7 @@ function renderJobBoard() {
     <div style="margin-bottom:16px;">
       <button class="btn btn-primary" style="font-size:12px;padding:8px 16px;" onclick="toggleJobSearch()">&#128269; Search for Jobs</button>
     </div>
-    <div id="jobSearchPanel" style="display:none;margin-bottom:16px;padding:16px;background:var(--bg);border-radius:12px;border:1px solid var(--border);">
+    <div id="jobSearchPanel" style="display:${showSearchPanel ? 'block' : 'none'};margin-bottom:16px;padding:16px;background:var(--bg);border-radius:12px;border:1px solid var(--border);">
       ${renderJobSearchPanel()}
     </div>
     ${filtered.length === 0 ? (jobBoardFilter === 'toReview' ?
@@ -3479,8 +3480,14 @@ function resetQualification(jobId) {
 }
 
 function toggleJobSearch() {
-  var panel = document.getElementById('jobSearchPanel');
-  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  showSearchPanel = !showSearchPanel;
+  render();
+  if (showSearchPanel) {
+    setTimeout(function() {
+      var panel = document.getElementById('jobSearchPanel');
+      if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
 }
 
 function renderJobSearchPanel() {
@@ -3678,17 +3685,15 @@ function getHeadhunterJobLinks(titles, location) {
 }
 
 function requestMoreJobs() {
-  // Navigate to Job Board with 'all' filter, then open the unified search panel
+  // Navigate to Job Board with 'all' filter and open search panel
   currentView = 'jobBoard';
   jobBoardFilter = 'all';
+  showSearchPanel = true;
   render();
   setTimeout(function() {
     var panel = document.getElementById('jobSearchPanel');
-    if (panel) {
-      panel.style.display = 'block';
-      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, 100);
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
 }
 
 async function runMultiSourceSearch(terms, location, sources) {
@@ -3701,7 +3706,10 @@ async function runMultiSourceSearch(terms, location, sources) {
 
   function updateProgress(sourceName, status) {
     completed++;
-    if (progressEl) progressEl.innerHTML += '<div>' + escHtml(sourceName) + ': ' + status + '</div>';
+    var isError = status === 'error' || status === '0 found';
+    var statusColor = isError ? 'var(--text-light)' : 'var(--success)';
+    var icon = isError ? '&#9675;' : '&#9679;';
+    if (progressEl) progressEl.innerHTML += '<div style="color:' + statusColor + ';">' + icon + ' ' + escHtml(sourceName) + ': ' + status + '</div>';
     var pbar = document.getElementById('searchProgressBar');
     var plabel = document.getElementById('searchProgressLabel');
     if (pbar) pbar.style.width = Math.round((completed / totalSources) * 100) + '%';
@@ -3937,11 +3945,22 @@ async function searchViaCorsProxy(pageUrl, sourceName, existingUrls) {
 
 async function searchHeadhunterSite(siteUrl, firmName, terms, existingUrls) {
   var results = [];
-  var PROXY = 'https://api.allorigins.win/raw?url=';
+  var proxies = [
+    'https://api.allorigins.win/raw?url=',
+    'https://corsproxy.io/?'
+  ];
+  var html = '';
   try {
-    var resp = await fetch(PROXY + encodeURIComponent(siteUrl), { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) return results;
-    var html = await resp.text();
+    for (var pi = 0; pi < proxies.length; pi++) {
+      try {
+        var resp = await fetch(proxies[pi] + encodeURIComponent(siteUrl), { signal: AbortSignal.timeout(8000) });
+        if (resp.ok) {
+          html = await resp.text();
+          if (html.length > 500) break;
+        }
+      } catch(pe) {}
+    }
+    if (!html || html.length < 500) return results;
     var parser = new DOMParser();
     var doc = parser.parseFromString(html, 'text/html');
 
