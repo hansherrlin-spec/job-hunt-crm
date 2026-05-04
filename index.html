@@ -911,8 +911,8 @@
     <h1>Job Hunt CRM</h1>
     <nav>
       <div class="nav-section-label">Overview</div>
-      <a data-page="inbox"><span class="icon">&#128229;</span> Smart Inbox</a>
       <a class="active" data-page="dashboard"><span class="icon">&#9632;</span> Dashboard</a>
+      <a data-page="inbox"><span class="icon">&#128229;</span> Smart Inbox</a>
       <div class="nav-divider"></div>
       <div class="nav-section-label">Pipeline</div>
       <a data-page="contacts"><span class="icon">&#9899;</span> Contacts</a>
@@ -1617,10 +1617,21 @@ function renderDashboard() {
 
   const recentActivities = [...DATA.activities].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
 
-  // Current week target
+  // Current week target - try exact match first, then fall back to most recent target
   const currentWeekId = getWeekId(new Date());
-  const currentTarget = (DATA.weeklyTargets || []).find(t => t.weekId === currentWeekId);
-  const weekActuals = getWeekActuals(currentWeekId);
+  let currentTarget = (DATA.weeklyTargets || []).find(t => t.weekId === currentWeekId);
+  let displayWeekId = currentWeekId;
+  if (!currentTarget && (DATA.weeklyTargets || []).length > 0) {
+    // Show most recent target if no exact match (handles timezone edge cases)
+    const sorted = [...DATA.weeklyTargets].sort((a,b) => b.weekId.localeCompare(a.weekId));
+    // Only show if it's within the last 2 weeks
+    const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString().slice(0,10);
+    if (sorted[0] && sorted[0].weekId >= twoWeeksAgo) {
+      currentTarget = sorted[0];
+      displayWeekId = sorted[0].weekId;
+    }
+  }
+  const weekActuals = getWeekActuals(displayWeekId);
 
   // Compute overall target completion percentage
   let targetPct = 0;
@@ -1672,7 +1683,7 @@ function renderDashboard() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
           <h3 style="font-size:15px;">This Week's Targets</h3>
           <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:12px;color:var(--text-light);">Week of ${formatDate(getWeekStart(currentWeekId))}</span>
+            <span style="font-size:12px;color:var(--text-light);">${displayWeekId !== currentWeekId ? '(Recent) ' : ''}Week of ${formatDate(getWeekStart(displayWeekId))}</span>
             <span class="badge ${targetPct >= 100 ? 'badge-green' : targetPct >= 50 ? 'badge-yellow' : 'badge-red'}" style="font-size:11px;">${targetPct}%</span>
           </div>
         </div>
@@ -4796,10 +4807,10 @@ function parseInbox() {
   if (isEmail || isMeeting || hasImages || hasPDF) {
     const actType = isMeeting ? 'meeting' : isEmail ? 'email' : 'other';
     result.activities.push({
-      title: extractedSubject || (isMeeting ? 'Möte' : isEmail ? 'Email' : 'Upload') + (extractedName ? ' med ' + extractedName : '') + (extractedCompany ? ' (' + extractedCompany + ')' : ''),
+      title: extractedSubject || (isMeeting ? 'Meeting' : isEmail ? 'Email' : 'Upload') + (extractedName ? ' with ' + extractedName : '') + (extractedCompany ? ' (' + extractedCompany + ')' : ''),
       type: actType,
       contactName: extractedName,
-      notes: text.slice(0, 300).replace(/\n/g, ' ') + fileContext,
+      notes: text + fileContext,
       rawContent: text
     });
   }
@@ -4899,11 +4910,10 @@ function renderInboxResults() {
     });
     html += '</select></div></div>';
 
-    // Date
-    if (a.emlDate) {
-      const dateStr = new Date(a.emlDate).toISOString().split('T')[0];
-      html += '<div class="form-group"><label>Date</label><input id="inbox_adate" type="date" value="' + dateStr + '"></div>';
-    }
+    // Date - always show, pre-fill from email or default to today
+    var actDateStr = today();
+    if (a.emlDate) { try { actDateStr = new Date(a.emlDate).toISOString().split('T')[0]; } catch(e) {} }
+    html += '<div class="form-group"><label>Date</label><input id="inbox_adate" type="date" value="' + actDateStr + '"></div>';
 
     // Mentioned companies
     if (mentioned.length > 0) {
@@ -5004,13 +5014,32 @@ function inboxSaveActivity() {
     if (fileTexts.length > 0) rawContent += '\n\n' + fileTexts.join('\n\n');
   }
 
+  const dateEl = document.getElementById('inbox_adate');
+  const actDate = (dateEl && dateEl.value) ? dateEl.value : today();
+
+  // Collect next steps from chips + free text
+  var nextSteps = [];
+  var nsContainer = document.getElementById('inboxNextSteps');
+  if (nsContainer) {
+    nsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { nextSteps.push(cb.value); });
+  }
+  var nsFree = (document.getElementById('inbox_nextstep_free') || {}).value || '';
+  if (nsFree.trim()) nextSteps.push(nsFree.trim());
+
+  // Append next steps to notes
+  var notes = document.getElementById('inbox_anotes').value.trim();
+  if (nextSteps.length > 0) {
+    notes += '\n\nNext steps: ' + nextSteps.join(', ');
+  }
+
   const activity = {
-    id: genId(), title, date: today(),
+    id: genId(), title, date: actDate,
     type: document.getElementById('inbox_atype').value,
     contactId: contactId || null,
     contactName: contact ? contact.name : '',
     companyId: null,
-    notes: document.getElementById('inbox_anotes').value.trim(),
+    notes: notes,
+    nextSteps: nextSteps,
     rawContent, createdAt: today()
   };
 
