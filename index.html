@@ -1714,7 +1714,10 @@ document.querySelectorAll('.sidebar nav a').forEach(a => {
 
 function updateNav() {
   document.querySelectorAll('.sidebar nav a').forEach(a => {
-    a.classList.toggle('active', a.dataset.page === currentPage);
+    var isActive = a.dataset.page === currentPage;
+    // Job Board link should be active for both swipe and list views
+    if (a.dataset.page === 'jobboard' && currentPage === 'jobboard_list') isActive = true;
+    a.classList.toggle('active', isActive);
   });
 }
 
@@ -3685,10 +3688,11 @@ function getHeadhunterJobLinks(titles, location) {
 }
 
 function requestMoreJobs() {
-  // Navigate to Job Board with 'all' filter and open search panel
-  currentView = 'jobBoard';
+  // Navigate to Job Board list view with search panel open
+  currentPage = 'jobboard_list';
   jobBoardFilter = 'all';
   showSearchPanel = true;
+  updateNav();
   render();
   setTimeout(function() {
     var panel = document.getElementById('jobSearchPanel');
