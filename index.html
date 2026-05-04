@@ -3556,7 +3556,7 @@ function renderJobSearchPanel() {
     // Search button + results area
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
     '<button class="btn btn-primary" style="font-size:13px;padding:8px 20px;" onclick="executeJobSearch()">&#128269; Search</button>' +
-    '<span style="font-size:11px;color:var(--text-light);">Platsbanken results appear below. Other sources open in new tabs.</span>' +
+    '<span style="font-size:11px;color:var(--text-light);">Searches all selected sources and shows results below.</span>' +
     '</div>' +
     '<div id="searchResultsArea"></div>' +
     '</div>';
@@ -3609,7 +3609,6 @@ function toggleAllHHChecks(state) {
 }
 
 function executeJobSearch() {
-  // Gather selected search terms
   var terms = [];
   document.querySelectorAll('.search-term-check:checked').forEach(function(cb) { terms.push(cb.value); });
   var custom = (document.getElementById('customSearchTerm') || {}).value || '';
@@ -3619,47 +3618,23 @@ function executeJobSearch() {
   var location = (document.getElementById('searchLocation') || {}).value || 'Malmö';
   var resultsArea = document.getElementById('searchResultsArea');
 
-  // 1. Run Platsbanken API search (results appear inline)
-  var queries = terms.slice(0, 4).map(function(t) { return t + ' ' + location; });
+  // Collect all selected sources
+  var sources = [];
+  document.querySelectorAll('.source-check:checked').forEach(function(cb) {
+    sources.push({
+      type: cb.getAttribute('data-type'),
+      id: cb.getAttribute('data-id') || '',
+      firm: cb.getAttribute('data-firm') || '',
+      url: cb.getAttribute('data-url') || ''
+    });
+  });
+
+  var totalSources = sources.length;
   if (resultsArea) {
-    resultsArea.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-light);">Searching Platsbanken...</div>';
+    resultsArea.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:8px;">&#128269;</div><div style="color:var(--text-light);">Searching ' + totalSources + ' sources...</div><div id="searchProgress" style="font-size:11px;color:var(--text-muted);margin-top:8px;"></div></div>';
   }
-  runJobSearch(queries, location);
 
-  // 2. Open selected job boards in new tabs
-  var openedTabs = 0;
-  document.querySelectorAll('.source-check[data-type="board"]:checked').forEach(function(cb) {
-    var id = cb.getAttribute('data-id');
-    var q = encodeURIComponent(terms[0] + ' ' + location);
-    var url = '';
-    switch(id) {
-      case 'linkedin':
-        // Open one tab per term (max 3)
-        terms.slice(0, 3).forEach(function(t) {
-          window.open('https://se.linkedin.com/jobs/search?keywords=' + encodeURIComponent(t + ' ' + location), '_blank');
-          openedTabs++;
-        });
-        return;
-      case 'thehub':
-        url = 'https://thehub.io/jobs?search=' + encodeURIComponent(terms[0]) + '&location=Copenhagen'; break;
-      case 'meetfrank':
-        url = 'https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg'; break;
-      case 'indeed':
-        url = 'https://se.indeed.com/jobb?q=' + q + '&l=' + encodeURIComponent(location); break;
-      case 'platsbanken': return; // handled via API
-    }
-    if (url) { window.open(url, '_blank'); openedTabs++; }
-  });
-
-  // 3. Open selected headhunter sites in new tabs
-  document.querySelectorAll('.source-check[data-type="hh"]:checked').forEach(function(cb) {
-    var url = cb.getAttribute('data-url');
-    if (url) { window.open(url, '_blank'); openedTabs++; }
-  });
-
-  if (openedTabs > 0) {
-    toast('Opened ' + openedTabs + ' tab' + (openedTabs > 1 ? 's' : '') + ' + searching Platsbanken');
-  }
+  runMultiSourceSearch(terms, location, sources);
 }
 
 function openSelectedJobBoards() {
@@ -3695,50 +3670,354 @@ function getHeadhunterJobLinks(titles, location) {
 }
 
 function requestMoreJobs() {
-  // Build search queries from dream job definition
-  var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : getDefaultJobbmal().dream;
-  var titles = (dj.title || 'Head of Sales').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
-  var location = (dj.location || 'Malmö').split(',')[0].trim().split('.')[0].trim();
-
-  // Show search modal with live results
-  var searchQueries = titles.slice(0, 4).map(function(t) { return t + ' ' + location; });
-  var modalHtml = '<div style="font-size:13px;">' +
-    '<p style="margin-bottom:12px;color:var(--text-light);">Searching Swedish job boards using your dream job criteria...</p>' +
-    '<div id="jobSearchResults" style="min-height:120px;display:flex;align-items:center;justify-content:center;">' +
-    '<div style="text-align:center;color:var(--text-light);">&#128269; Searching for: ' + escHtml(titles.slice(0,3).join(', ')) + '...</div></div>' +
-    '<div id="jobSearchLinks" style="margin-top:16px;display:none;">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-    '<span style="font-size:12px;color:var(--text-light);font-weight:600;">Job Boards:</span>' +
-    '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="openSelectedJobBoards()">Open Selected</button>' +
-    '</div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
-    titles.slice(0,3).map(function(t) {
-      var q = encodeURIComponent(t + ' ' + location);
-      var url = 'https://se.linkedin.com/jobs/search?keywords=' + q;
-      return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="' + url + '" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">LinkedIn: ' + escHtml(t) + '</label>';
-    }).join('') +
-    '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="https://arbetsformedlingen.se/platsbanken/annonser?q=' + encodeURIComponent(titles[0] + ' ' + location) + '" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">Platsbanken</label>' +
-    '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="https://thehub.io/jobs?search=' + encodeURIComponent(titles[0]) + '&location=Copenhagen" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">The Hub</label>' +
-    '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">MeetFrank</label>' +
-    '</div></div>' +
-    '<div id="jobSearchHeadhunters" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-    '<span style="font-size:12px;color:var(--text-light);font-weight:600;">Headhunter Job Pages:</span>' +
-    '<div style="display:flex;gap:6px;">' +
-    '<button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="toggleAllHHChecks(true)">Select All</button>' +
-    '<button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="toggleAllHHChecks(false)">None</button>' +
-    '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="openSelectedHH()">Open Selected</button>' +
-    '</div></div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
-    getHeadhunterCheckboxLinks() +
-    '</div></div></div>';
-
-  openModal('Find Jobs', modalHtml, '<button class="btn btn-ghost" onclick="closeModal()">Close</button>');
-
-  // Search Arbetsformedlingen JobTech API (public, no key needed)
-  runJobSearch(searchQueries, location);
+  // Navigate to Job Board, open the unified search panel, and auto-search
+  currentView = 'jobBoard';
+  render();
+  setTimeout(function() {
+    var panel = document.getElementById('jobSearchPanel');
+    if (panel) {
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 100);
 }
 
+async function runMultiSourceSearch(terms, location, sources) {
+  var allResults = [];
+  var existingUrls = new Set((DATA.savedJobs || []).map(function(j) { return (j.url || '').toLowerCase(); }));
+  var progressEl = document.getElementById('searchProgress');
+  var resultsArea = document.getElementById('searchResultsArea');
+  var completed = 0;
+  var totalSources = sources.length;
+
+  function updateProgress(sourceName, status) {
+    completed++;
+    if (progressEl) progressEl.innerHTML += '<div>' + escHtml(sourceName) + ': ' + status + '</div>';
+  }
+
+  // Process each source in parallel
+  var promises = sources.map(async function(src) {
+    try {
+      if (src.type === 'board' && src.id === 'platsbanken') {
+        var results = await searchPlatsbanken(terms, location, existingUrls);
+        updateProgress('Platsbanken', results.length + ' found');
+        return results;
+      }
+      if (src.type === 'board' && src.id === 'linkedin') {
+        var results = await searchLinkedIn(terms, location, existingUrls);
+        updateProgress('LinkedIn', results.length + ' found');
+        return results;
+      }
+      if (src.type === 'board' && src.id === 'thehub') {
+        var results = await searchTheHub(terms, location, existingUrls);
+        updateProgress('The Hub', results.length + ' found');
+        return results;
+      }
+      if (src.type === 'board' && (src.id === 'indeed' || src.id === 'meetfrank')) {
+        var results = await searchViaCorsProxy(src.id === 'indeed' ? 'https://se.indeed.com/jobb?q=' + encodeURIComponent(terms[0] + ' ' + location) : 'https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg', src.id, existingUrls);
+        updateProgress(src.id === 'indeed' ? 'Indeed' : 'MeetFrank', results.length + ' found');
+        return results;
+      }
+      if (src.type === 'hh') {
+        var results = await searchHeadhunterSite(src.url, src.firm, terms, existingUrls);
+        updateProgress(src.firm, results.length + ' found');
+        return results;
+      }
+    } catch (e) {
+      updateProgress(src.firm || src.id || 'Source', 'error');
+      return [];
+    }
+    return [];
+  });
+
+  var resultSets = await Promise.all(promises);
+  resultSets.forEach(function(set) { allResults = allResults.concat(set); });
+
+  // Deduplicate by company+role
+  var seen = new Set();
+  allResults = allResults.filter(function(r) {
+    var key = (r.company + '|' + r.role).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Score results
+  var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : {};
+  var djTitles = (dj.title || '').toLowerCase().split(',').map(function(t) { return t.trim(); });
+  var djIndustries = (dj.industries || '').toLowerCase().split(',').map(function(t) { return t.trim(); });
+
+  allResults.forEach(function(r) {
+    var score = 0;
+    var roleL = (r.role + ' ' + (r.industry || '')).toLowerCase();
+    var descL = (r.description || '').toLowerCase();
+    djTitles.forEach(function(t) { if (t && roleL.indexOf(t) >= 0) score += 30; });
+    djIndustries.forEach(function(ind) { if (ind && (roleL.indexOf(ind) >= 0 || descL.indexOf(ind) >= 0)) score += 15; });
+    if ((r.location || '').toLowerCase().indexOf(location.toLowerCase()) >= 0) score += 10;
+    if (/director|head of|chief|vp |cco|coo|ceo/i.test(r.role)) score += 20;
+    if (/sales|commercial|revenue/i.test(roleL)) score += 10;
+    r._score = Math.min(score, 100);
+  });
+
+  allResults.sort(function(a, b) { return b._score - a._score; });
+
+  if (allResults.length === 0) {
+    if (resultsArea) {
+      resultsArea.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:8px;">&#128204;</div><p style="color:var(--text-light);">No new matches found across selected sources.</p></div>';
+    }
+    return;
+  }
+
+  // Show results with limit selector and add button
+  var defaultLimit = Math.min(10, allResults.length);
+  var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
+    '<p style="font-size:12px;color:var(--text-light);margin:0;">Found ' + allResults.length + ' jobs across all sources:</p>' +
+    '<div style="display:flex;align-items:center;gap:8px;">' +
+    '<label style="font-size:11px;color:var(--text-light);white-space:nowrap;">Add top <select id="jobAddLimit" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);">';
+  for (var n = 1; n <= Math.min(10, allResults.length); n++) {
+    html += '<option value="' + n + '"' + (n === defaultLimit ? ' selected' : '') + '>' + n + '</option>';
+  }
+  html += '</select> jobs</label>' +
+    '<button class="btn btn-primary" style="font-size:11px;padding:5px 12px;" onclick="addAllSearchResults()">Add to Swipe Queue</button>' +
+    '</div></div><div style="display:flex;flex-direction:column;gap:6px;">';
+
+  allResults.forEach(function(r, i) {
+    var tierColor = r._score >= 50 ? 'var(--success)' : r._score >= 25 ? 'var(--warning)' : 'var(--text-light)';
+    html += '<div class="card" style="padding:10px;border-left:3px solid ' + tierColor + ';">' +
+      '<div style="display:flex;justify-content:space-between;align-items:start;">' +
+      '<div style="flex:1;min-width:0;">' +
+      '<div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(r.company) + ' <span style="font-weight:400;color:var(--text-light);">- ' + escHtml(r.role) + '</span></div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:2px;">' + escHtml(r.location || '') + (r.deadline ? ' - Deadline: ' + r.deadline.substring(0, 10) : '') + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">' + escHtml(r.source) + '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">' +
+      '<span style="font-size:11px;font-weight:600;color:' + tierColor + ';">' + r._score + 'p</span>' +
+      '<button class="btn btn-primary" style="font-size:10px;padding:3px 8px;min-height:24px;" onclick="event.stopPropagation();addSearchResult(' + i + ')">+ Add</button>' +
+      '</div></div></div>';
+  });
+  html += '</div>';
+
+  if (resultsArea) resultsArea.innerHTML = html;
+  window._searchResults = allResults;
+}
+
+// --- Individual source search functions ---
+
+async function searchPlatsbanken(terms, location, existingUrls) {
+  var results = [];
+  var queries = terms.slice(0, 4).map(function(t) { return t + ' ' + location; });
+  for (var qi = 0; qi < queries.length; qi++) {
+    try {
+      var resp = await fetch('https://jobsearch.api.jobtechdev.se/search?q=' + encodeURIComponent(queries[qi]) + '&limit=10&offset=0', { headers: { 'Accept': 'application/json' } });
+      if (!resp.ok) continue;
+      var data = await resp.json();
+      (data.hits || []).forEach(function(hit) {
+        var url = hit.webpage_url || (hit.application_details && hit.application_details.url) || '';
+        if (url && existingUrls.has(url.toLowerCase())) return;
+        var emp = (hit.employer && hit.employer.name) || '';
+        var headline = hit.headline || '';
+        var desc = (hit.description && hit.description.text) ? hit.description.text.substring(0, 500) : '';
+
+        // Detect recruiter
+        var recruiterKw = ['rekrytering','recruit','headhunt','search','bemanning','staffing','konsult','urval','hanborg','hays','randstad','adecco','manpower'];
+        var isRec = recruiterKw.some(function(k) { return emp.toLowerCase().includes(k); });
+        if (!isRec && DATA.headhunters) isRec = DATA.headhunters.some(function(h) { return emp.toLowerCase().includes(h.firm.toLowerCase()); });
+
+        var company = emp, source = 'Platsbanken';
+        if (isRec) {
+          source = 'Platsbanken (via ' + emp + ')';
+          var m = headline.match(/(?:at|to|till|hos|for|@)\s+(.+?)(?:\s*[-,]|$)/i);
+          company = m ? m[1].trim() : '(via ' + emp + ')';
+        }
+
+        results.push({ company: company, role: headline, url: url, location: (hit.workplace_address && hit.workplace_address.municipality) || location, description: desc, deadline: hit.application_deadline || '', industry: (hit.occupation && hit.occupation.label) || '', source: source });
+      });
+    } catch (e) {}
+  }
+  return results;
+}
+
+async function searchLinkedIn(terms, location, existingUrls) {
+  var results = [];
+  var PROXY = 'https://api.allorigins.win/raw?url=';
+  for (var i = 0; i < Math.min(terms.length, 2); i++) {
+    try {
+      var searchUrl = 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=' + encodeURIComponent(terms[i]) + '&location=' + encodeURIComponent(location + ', Sweden') + '&start=0';
+      var resp = await fetch(PROXY + encodeURIComponent(searchUrl), { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) continue;
+      var html = await resp.text();
+      // Parse LinkedIn job cards from HTML
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(html, 'text/html');
+      var cards = doc.querySelectorAll('.base-card, .job-search-card, li');
+      cards.forEach(function(card) {
+        var titleEl = card.querySelector('.base-search-card__title, h3, h4');
+        var compEl = card.querySelector('.base-search-card__subtitle, h4, .hidden-nested-link');
+        var locEl = card.querySelector('.job-search-card__location, .base-search-card__metadata span');
+        var linkEl = card.querySelector('a[href*="/jobs/view/"]') || card.querySelector('a');
+        if (!titleEl || !linkEl) return;
+        var role = (titleEl.textContent || '').trim();
+        var company = compEl ? (compEl.textContent || '').trim() : '';
+        var loc = locEl ? (locEl.textContent || '').trim() : location;
+        var url = (linkEl.getAttribute('href') || '').split('?')[0];
+        if (!role || !url) return;
+        if (existingUrls.has(url.toLowerCase())) return;
+        results.push({ company: company, role: role, url: url, location: loc, description: '', deadline: '', industry: '', source: 'LinkedIn' });
+      });
+    } catch (e) {}
+  }
+  return results;
+}
+
+async function searchTheHub(terms, location, existingUrls) {
+  var results = [];
+  var PROXY = 'https://api.allorigins.win/raw?url=';
+  try {
+    var url = 'https://thehub.io/jobs?search=' + encodeURIComponent(terms[0]) + '&location=sweden';
+    var resp = await fetch(PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return results;
+    var html = await resp.text();
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('a[href*="/jobs/"]').forEach(function(el) {
+      var href = el.getAttribute('href') || '';
+      if (!href.includes('/jobs/') || href.endsWith('/jobs') || href.endsWith('/jobs/')) return;
+      var fullUrl = href.startsWith('http') ? href : 'https://thehub.io' + href;
+      if (existingUrls.has(fullUrl.toLowerCase())) return;
+      var title = (el.textContent || '').trim().substring(0, 120);
+      // Try to split "Role at Company" or just use title
+      var parts = title.split(/\s+at\s+|\s+-\s+/i);
+      var role = parts[0] || title;
+      var company = parts[1] || '';
+      if (role.length > 5 && role.length < 100) {
+        results.push({ company: company, role: role, url: fullUrl, location: '', description: '', deadline: '', industry: '', source: 'The Hub' });
+      }
+    });
+  } catch (e) {}
+  return results.slice(0, 10);
+}
+
+async function searchViaCorsProxy(pageUrl, sourceName, existingUrls) {
+  // Generic: fetch page, try to extract links/titles
+  var results = [];
+  var PROXY = 'https://api.allorigins.win/raw?url=';
+  try {
+    var resp = await fetch(PROXY + encodeURIComponent(pageUrl), { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return results;
+    var html = await resp.text();
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(html, 'text/html');
+    // Look for job-like links
+    doc.querySelectorAll('a').forEach(function(el) {
+      var href = el.getAttribute('href') || '';
+      var text = (el.textContent || '').trim();
+      if (text.length > 10 && text.length < 120 && /director|chief|head|manager|lead|sales|commercial|vp|coo|cco|ceo/i.test(text)) {
+        var fullUrl = href.startsWith('http') ? href : pageUrl.split('/').slice(0, 3).join('/') + href;
+        if (!existingUrls.has(fullUrl.toLowerCase())) {
+          results.push({ company: '', role: text, url: fullUrl, location: '', description: '', deadline: '', industry: '', source: sourceName.charAt(0).toUpperCase() + sourceName.slice(1) });
+        }
+      }
+    });
+  } catch (e) {}
+  return results.slice(0, 8);
+}
+
+async function searchHeadhunterSite(siteUrl, firmName, terms, existingUrls) {
+  var results = [];
+  var PROXY = 'https://api.allorigins.win/raw?url=';
+  try {
+    var resp = await fetch(PROXY + encodeURIComponent(siteUrl), { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return results;
+    var html = await resp.text();
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(html, 'text/html');
+
+    // Strategy 1: Look for JSON-LD structured data
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach(function(script) {
+      try {
+        var ld = JSON.parse(script.textContent);
+        var items = Array.isArray(ld) ? ld : (ld['@graph'] || [ld]);
+        items.forEach(function(item) {
+          if (item['@type'] === 'JobPosting') {
+            var url = item.url || siteUrl;
+            if (!existingUrls.has(url.toLowerCase())) {
+              results.push({
+                company: (item.hiringOrganization && item.hiringOrganization.name) || '',
+                role: item.title || '',
+                url: url,
+                location: (item.jobLocation && item.jobLocation.address && item.jobLocation.address.addressLocality) || '',
+                description: (item.description || '').replace(/<[^>]*>/g, '').substring(0, 400),
+                deadline: item.validThrough || '',
+                industry: item.industry || '',
+                source: firmName
+              });
+            }
+          }
+        });
+      } catch (e) {}
+    });
+
+    // Strategy 2: Parse job listing links from HTML
+    if (results.length === 0) {
+      var baseDomain = siteUrl.split('/').slice(0, 3).join('/');
+      doc.querySelectorAll('a').forEach(function(el) {
+        var href = el.getAttribute('href') || '';
+        var text = (el.textContent || '').trim();
+        // Filter for job-like links (has meaningful text, links to job detail pages)
+        if (text.length < 8 || text.length > 150) return;
+        if (/cookie|integritet|privacy|om oss|about|kontakt|contact|logga in|login|blog/i.test(text)) return;
+        // Check if it looks like a job title or contains relevant keywords
+        var isJobLink = /jobb|uppdrag|position|vacancy|career|lediga|tjanst|tjänst|opdrag/i.test(href) ||
+          /director|chief|head|manager|sales|commercial|vp|coo|cco|ceo|chef|ansvarig|ledare/i.test(text);
+        if (!isJobLink) return;
+        var fullUrl = href.startsWith('http') ? href : baseDomain + (href.startsWith('/') ? '' : '/') + href;
+        if (existingUrls.has(fullUrl.toLowerCase())) return;
+        if (results.some(function(r) { return r.role === text; })) return;
+        results.push({ company: '', role: text, url: fullUrl, location: '', description: '', deadline: '', industry: '', source: firmName });
+      });
+    }
+  } catch (e) {}
+  return results.slice(0, 10);
+}
+
+function addAllSearchResults() {
+  var results = window._searchResults || [];
+  if (results.length === 0) return;
+  var limitEl = document.getElementById('jobAddLimit');
+  var limit = limitEl ? parseInt(limitEl.value, 10) : 10;
+  if (!limit || limit < 1) limit = 10;
+  var added = 0;
+  results.forEach(function(r) {
+    if (added >= limit) return;
+    // Skip if already added (check URL)
+    if (r.url && (DATA.savedJobs || []).some(function(j) { return (j.url || '').toLowerCase() === r.url.toLowerCase(); })) return;
+    DATA.savedJobs = DATA.savedJobs || [];
+    DATA.savedJobs.push({
+      id: genId(),
+      url: r.url || '',
+      title: (r.company ? r.company + ' - ' : '') + r.role,
+      company: r.company || '',
+      role: r.role || '',
+      industry: r.industry || '',
+      location: r.location || '',
+      note: 'Found via ' + (r.source || 'search') + '. ' + (r.deadline ? 'Deadline: ' + r.deadline.substring(0, 10) + '. ' : '') + (r.description ? r.description.substring(0, 300) : ''),
+      description: r.description || '',
+      reviewed: false,
+      applied: false,
+      addedAt: today()
+    });
+    added++;
+  });
+  if (added > 0) {
+    saveData(DATA);
+    toast('Added ' + added + ' jobs to your swipe queue!');
+    setTimeout(function() { render(); }, 500);
+  } else {
+    toast('All jobs already in your list');
+  }
+}
+
+// Legacy function - still used by old modal
 async function runJobSearch(queries, location) {
   var allResults = [];
   var resultsDiv = document.getElementById('jobSearchResults');
