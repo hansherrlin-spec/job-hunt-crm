@@ -3325,14 +3325,15 @@ function renderJobBoard() {
     <div id="hhJobSearchPanel" style="display:none;margin-bottom:16px;padding:14px;background:var(--bg);border-radius:12px;border:1px solid var(--border);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <span style="font-size:13px;font-weight:600;">Headhunter Job Pages</span>
-        <span style="font-size:11px;color:var(--text-light);">${(DATA.headhunters || []).length} firms</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="toggleAllHHChecks(true)">Select All</button>
+          <button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="toggleAllHHChecks(false)">None</button>
+          <button class="btn btn-primary" style="font-size:11px;padding:5px 12px;" onclick="openSelectedHH()">Open Selected</button>
+        </div>
       </div>
-      <p style="font-size:12px;color:var(--text-light);margin-bottom:10px;">Click to open each headhunter's current job listings:</p>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:10px;">Pick which headhunters to search, then click Open Selected:</p>
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
-        ${getHeadhunterSearchButtons()}
-      </div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-        <button class="btn btn-primary" style="font-size:12px;padding:6px 14px;" onclick="openAllHeadhunterJobs()">Open All (new tabs)</button>
+        ${getHeadhunterCheckboxLinks()}
       </div>
     </div>
     ${filtered.length === 0 ? (jobBoardFilter === 'toReview' ?
@@ -3506,7 +3507,7 @@ var HH_JOB_URLS = {
   'Lisberg': 'https://www.lisberg.se/uppdrag/'
 };
 
-function getHeadhunterSearchButtons() {
+function getHeadhunterCheckboxLinks() {
   var hh = DATA.headhunters || [];
   if (hh.length === 0) return '<span style="font-size:11px;color:var(--text-light);">No headhunters added yet. Go to Headhunters page to add some.</span>';
   var html = '';
@@ -3514,24 +3515,37 @@ function getHeadhunterSearchButtons() {
     var url = HH_JOB_URLS[h.firm] || (h.website ? h.website : '');
     if (!url) return;
     var statusColor = h.status === 'active' ? 'var(--success)' : h.status === 'in_dialogue' ? 'var(--warning)' : h.status === 'contacted' ? 'var(--primary)' : 'var(--text-light)';
-    html += '<a href="' + escHtml(url) + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border);border-left:3px solid ' + statusColor + ';text-decoration:none;color:var(--text);background:white;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'white\'">' + escHtml(h.firm) + '</a>';
+    html += '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);border-left:3px solid ' + statusColor + ';background:white;cursor:pointer;user-select:none;transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'">' +
+      '<input type="checkbox" class="hh-check" value="' + escHtml(url) + '" data-firm="' + escHtml(h.firm) + '" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">' +
+      escHtml(h.firm) + '</label>';
   });
   return html;
 }
 
-function openAllHeadhunterJobs() {
-  var hh = DATA.headhunters || [];
+function toggleAllHHChecks(state) {
+  document.querySelectorAll('.hh-check').forEach(function(cb) {
+    cb.checked = state;
+    cb.parentElement.style.background = state ? 'var(--primary-light)' : 'white';
+  });
+}
+
+function openSelectedJobBoards() {
+  var checks = document.querySelectorAll('.jb-check:checked');
+  if (checks.length === 0) { toast('Select at least one job board first'); return; }
+  checks.forEach(function(cb) { window.open(cb.value, '_blank'); });
+}
+
+function openSelectedHH() {
+  var checks = document.querySelectorAll('.hh-check:checked');
+  if (checks.length === 0) { toast('Select at least one headhunter first'); return; }
   var opened = 0;
-  hh.forEach(function(h) {
-    var url = HH_JOB_URLS[h.firm] || (h.website ? h.website : '');
-    if (url && opened < 10) {
-      window.open(url, '_blank');
+  checks.forEach(function(cb) {
+    if (opened < 15) {
+      window.open(cb.value, '_blank');
       opened++;
     }
   });
-  if (hh.length > 10) {
-    alert('Opened first 10. Click individual links for the rest.');
-  }
+  if (checks.length > 15) toast('Opened first 15 tabs');
 }
 
 function getHeadhunterJobLinks(titles, location) {
@@ -3560,20 +3574,30 @@ function requestMoreJobs() {
     '<div id="jobSearchResults" style="min-height:120px;display:flex;align-items:center;justify-content:center;">' +
     '<div style="text-align:center;color:var(--text-light);">&#128269; Searching for: ' + escHtml(titles.slice(0,3).join(', ')) + '...</div></div>' +
     '<div id="jobSearchLinks" style="margin-top:16px;display:none;">' +
-    '<p style="font-size:12px;color:var(--text-light);margin-bottom:8px;">Also search on:</p>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+    '<span style="font-size:12px;color:var(--text-light);font-weight:600;">Job Boards:</span>' +
+    '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="openSelectedJobBoards()">Open Selected</button>' +
+    '</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
     titles.slice(0,3).map(function(t) {
       var q = encodeURIComponent(t + ' ' + location);
-      return '<a href="https://se.linkedin.com/jobs/search?keywords=' + q + '" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">LinkedIn: ' + escHtml(t) + '</a>';
+      var url = 'https://se.linkedin.com/jobs/search?keywords=' + q;
+      return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="' + url + '" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">LinkedIn: ' + escHtml(t) + '</label>';
     }).join('') +
-    '<a href="https://arbetsformedlingen.se/platsbanken/annonser?q=' + encodeURIComponent(titles[0] + ' ' + location) + '" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">Platsbanken</a>' +
-    '<a href="https://thehub.io/jobs?search=' + encodeURIComponent(titles[0]) + '&location=Copenhagen" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">The Hub</a>' +
-    '<a href="https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">MeetFrank</a>' +
+    '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="https://arbetsformedlingen.se/platsbanken/annonser?q=' + encodeURIComponent(titles[0] + ' ' + location) + '" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">Platsbanken</label>' +
+    '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="https://thehub.io/jobs?search=' + encodeURIComponent(titles[0]) + '&location=Copenhagen" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">The Hub</label>' +
+    '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="if(!this.querySelector(\'input\').checked)this.style.background=\'white\'"><input type="checkbox" class="jb-check" value="https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg" style="width:13px;height:13px;" onchange="this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\'">MeetFrank</label>' +
     '</div></div>' +
     '<div id="jobSearchHeadhunters" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">' +
-    '<p style="font-size:12px;color:var(--text-light);margin-bottom:8px;font-weight:600;">Headhunter Job Pages:</p>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+    '<span style="font-size:12px;color:var(--text-light);font-weight:600;">Headhunter Job Pages:</span>' +
+    '<div style="display:flex;gap:6px;">' +
+    '<button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="toggleAllHHChecks(true)">Select All</button>' +
+    '<button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="toggleAllHHChecks(false)">None</button>' +
+    '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="openSelectedHH()">Open Selected</button>' +
+    '</div></div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
-    getHeadhunterJobLinks(titles, location) +
+    getHeadhunterCheckboxLinks() +
     '</div></div></div>';
 
   openModal('Find Jobs', modalHtml, '<button class="btn btn-ghost" onclick="closeModal()">Close</button>');
@@ -3600,19 +3624,56 @@ async function runJobSearch(queries, location) {
           // Deduplicate
           var url = hit.webpage_url || hit.application_details && hit.application_details.url || '';
           if (url && existingUrls.indexOf(url.toLowerCase()) >= 0) return;
-          var compName = (hit.employer && hit.employer.name) || '';
-          if (allResults.some(function(r){ return r.company === compName && r.role === (hit.headline || ''); })) return;
+          var employerName = (hit.employer && hit.employer.name) || '';
+          var headline = hit.headline || '';
+          var descText = (hit.description && hit.description.text) ? hit.description.text.substring(0, 800) : '';
+
+          // Detect if employer is a recruiter/headhunter (not the actual company)
+          var recruiterKeywords = ['rekrytering','rekryter','recruit','headhunt','executive search','bemanning','staffing','consulting','konsult','partner','search','urval','hanborg','hays','academic work','randstad','adecco','manpower'];
+          var empLower = employerName.toLowerCase();
+          var isRecruiter = recruiterKeywords.some(function(k) { return empLower.includes(k); });
+          // Also check against our headhunter list
+          if (!isRecruiter && DATA.headhunters) {
+            isRecruiter = DATA.headhunters.some(function(h) { return empLower.includes(h.firm.toLowerCase()) || h.firm.toLowerCase().includes(empLower); });
+          }
+
+          var actualCompany = employerName;
+          var recruiterSource = '';
+          if (isRecruiter) {
+            recruiterSource = employerName;
+            // Try to extract actual company from headline: "Role at Company" or "Role - Company" or "Role till Company"
+            var atMatch = headline.match(/(?:at|to|till|hos|for|@)\s+(.+?)(?:\s*[-,]|$)/i);
+            if (atMatch) {
+              actualCompany = atMatch[1].trim();
+            } else {
+              // Try from description first line
+              var descCompMatch = descText.match(/(?:our client|uppdragsgivare|kund|company|client|employer|arbetsgivare)[:\s]+([A-Z][A-Za-zÅÄÖåäö\s&]+?)(?:[,.\n])/i);
+              if (descCompMatch) {
+                actualCompany = descCompMatch[1].trim();
+              } else {
+                actualCompany = '(via ' + employerName + ')';
+              }
+            }
+          }
+
+          // Extract role from headline (strip company part if present)
+          var role = headline;
+          if (isRecruiter && actualCompany !== '(via ' + employerName + ')') {
+            role = headline.replace(/\s*(?:at|to|till|hos|for|@)\s+.+$/i, '').trim() || headline;
+          }
+
+          if (allResults.some(function(r){ return r.company === actualCompany && r.role === role; })) return;
 
           allResults.push({
-            company: compName,
-            role: hit.headline || '',
+            company: actualCompany,
+            role: role,
             url: url,
             location: (hit.workplace_address && hit.workplace_address.municipality) || location,
-            description: (hit.description && hit.description.text) ? hit.description.text.substring(0, 500) : '',
+            description: descText.substring(0, 500),
             published: hit.publication_date || '',
             deadline: hit.application_deadline || '',
             industry: (hit.occupation && hit.occupation.label) || '',
-            source: 'Platsbanken'
+            source: recruiterSource ? 'Platsbanken (via ' + recruiterSource + ')' : 'Platsbanken'
           });
         });
       }
@@ -3664,6 +3725,7 @@ async function runJobSearch(queries, location) {
       '<div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(r.company) + '</div>' +
       '<div style="font-size:12px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(r.role) + '</div>' +
       '<div style="font-size:11px;color:var(--text-light);margin-top:2px;">' + escHtml(r.location) + (r.deadline ? ' - Deadline: ' + r.deadline.substring(0,10) : '') + '</div>' +
+      (r.source && r.source !== 'Platsbanken' ? '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">' + escHtml(r.source) + '</div>' : '') +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
       '<span style="font-size:11px;font-weight:600;color:' + tierColor + ';">' + r._score + 'p</span>' +
