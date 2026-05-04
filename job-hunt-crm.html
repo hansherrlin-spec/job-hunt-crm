@@ -1077,8 +1077,12 @@ function renderSwipeBoard() {
   html += '<div class="swipe-dims">';
   html += '<div style="font-size:10px;color:var(--text-muted);text-align:center;margin-bottom:4px;">Tap a bar to adjust score</div>';
   dimDefs.forEach(function(d) {
-    var val = (overrides[d.key] !== undefined) ? overrides[d.key] : d.auto;
-    var pct = Math.round((val / d.max) * 100);
+    var pct;
+    if (overrides[d.key] !== undefined) {
+      pct = Math.round((overrides[d.key] / d.max) * 100);
+    } else {
+      pct = Math.min(100, Math.max(0, Math.round(d.auto)));
+    }
     var col = pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
     var isOverridden = overrides[d.key] !== undefined;
     html += '<div class="swipe-dim" style="cursor:pointer;" onclick="cycleDimScore(\'' + j.id + '\',\'' + d.key + '\',' + d.max + ')">';
@@ -1379,23 +1383,33 @@ function loadData() {
   const sources = [lsData, backupData, EMBEDDED_DATA].filter(Boolean);
   if (sources.length === 0) return getDefaultData();
 
-  // MERGE strategy: for each data field, take the longest array across sources.
-  // This prevents data loss when one source has targets but another has companies.
+  // MERGE strategy: merge by ID across all sources, keeping the richest version of each item
   const arrayFields = ['contacts','companies','headhunters','activities','dialogues','savedJobs','applications','weeklyTargets'];
   const merged = getDefaultData();
 
+  function itemKey(item) { return item.id || item.weekId || JSON.stringify(item); }
+  function itemFreshness(item) { return item.updatedAt || item.qualifiedAt || item.createdAt || item.date || item.addedAt || ''; }
+
   for (const field of arrayFields) {
-    let best = [];
-    let bestSource = 'default';
-    for (let i = 0; i < sources.length; i++) {
-      const arr = (sources[i][field] || []);
-      if (arr.length > best.length) {
-        best = arr;
-        bestSource = i === 0 ? 'localStorage' : i === 1 ? 'backup' : 'embedded';
+    const byId = {};
+    for (const src of sources) {
+      for (const item of (src[field] || [])) {
+        const key = itemKey(item);
+        const existing = byId[key];
+        if (!existing) {
+          byId[key] = item;
+        } else {
+          // Keep the item with more non-empty fields, or more recent timestamp
+          const existKeys = Object.keys(existing).filter(k => existing[k] !== '' && existing[k] !== null && existing[k] !== undefined).length;
+          const newKeys = Object.keys(item).filter(k => item[k] !== '' && item[k] !== null && item[k] !== undefined).length;
+          if (newKeys > existKeys || (newKeys === existKeys && itemFreshness(item) > itemFreshness(existing))) {
+            byId[key] = item;
+          }
+        }
       }
     }
-    merged[field] = best;
-    if (best.length > 0) console.log('[CRM] ' + field + ': ' + best.length + ' items (from ' + bestSource + ')');
+    merged[field] = Object.values(byId);
+    if (merged[field].length > 0) console.log('[CRM] ' + field + ': ' + merged[field].length + ' items (merged)');
   }
 
   // For dreamJob, take whichever source has it defined
@@ -1419,6 +1433,103 @@ function loadData() {
   return merged;
 }
 
+// Async reload that includes cloud data from Supabase
+async function loadDataWithCloud() {
+  const cloudData = await cloudLoad();
+  if (!cloudData) return;
+
+  const sources = [];
+  try { const r = localStorage.getItem(STORAGE_KEY); if (r) sources.push(JSON.parse(r)); } catch(e) {}
+  sources.push(cloudData);
+  sources.push(EMBEDDED_DATA);
+
+  const arrayFields = ['contacts','companies','headhunters','activities','dialogues','savedJobs','applications','weeklyTargets'];
+  function itemKey(item) { return item.id || item.weekId || JSON.stringify(item); }
+  function itemFreshness(item) { return item.updatedAt || item.qualifiedAt || item.createdAt || item.date || item.addedAt || ''; }
+
+  let changed = false;
+  for (const field of arrayFields) {
+    const byId = {};
+    for (const src of sources) {
+      for (const item of (src[field] || [])) {
+        const key = itemKey(item);
+        const existing = byId[key];
+        if (!existing) { byId[key] = item; }
+        else {
+          const eK = Object.keys(existing).filter(k => existing[k] !== '' && existing[k] !== null && existing[k] !== undefined).length;
+          const nK = Object.keys(item).filter(k => item[k] !== '' && item[k] !== null && item[k] !== undefined).length;
+          if (nK > eK || (nK === eK && itemFreshness(item) > itemFreshness(existing))) byId[key] = item;
+        }
+      }
+    }
+    const newArr = Object.values(byId);
+    if (newArr.length !== (DATA[field] || []).length) changed = true;
+    DATA[field] = newArr;
+  }
+
+  if (cloudData.dreamJob && (cloudData.dreamJob.dream || cloudData.dreamJob.good)) {
+    DATA.dreamJob = cloudData.dreamJob;
+    changed = true;
+  }
+  if (cloudData.jobPreferences) {
+    const ct = (cloudData.jobPreferences.qualified || []).length + (cloudData.jobPreferences.disqualified || []).length;
+    const dt = DATA.jobPreferences ? (DATA.jobPreferences.qualified || []).length + (DATA.jobPreferences.disqualified || []).length : 0;
+    if (ct > dt) { DATA.jobPreferences = cloudData.jobPreferences; changed = true; }
+  }
+
+  if (changed) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); } catch(e) {}
+    render();
+    console.log('[CRM] Cloud merge complete, re-rendered');
+  }
+}
+
+// --- SUPABASE CLOUD SYNC ---
+const SUPABASE_URL = 'https://vcvhmiukpwwpjonrycsl.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjdmhtaXVrcHd3cGpvbnJ5Y3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4ODA2NzcsImV4cCI6MjA5MzQ1NjY3N30.IBFGr-gR_-E_3bGc70zfF2VJDUC3vbk1gc56xLd7gnc';
+let supabaseReady = false;
+let cloudSaveTimer = null;
+
+async function cloudLoad() {
+  if (!SUPABASE_URL || SUPABASE_KEY.includes('placeholder')) return null;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/crm_data?user_id=eq.hans&select=data', {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (rows.length > 0 && rows[0].data) {
+      console.log('[CRM] Cloud data loaded from Supabase');
+      supabaseReady = true;
+      return rows[0].data;
+    }
+  } catch(e) { console.log('[CRM] Cloud load failed:', e.message); }
+  return null;
+}
+
+async function cloudSave(data) {
+  if (!SUPABASE_URL || SUPABASE_KEY.includes('placeholder')) return;
+  try {
+    const payload = { user_id: 'hans', data: data, updated_at: new Date().toISOString() };
+    const res = await fetch(SUPABASE_URL + '/rest/v1/crm_data', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      supabaseReady = true;
+      console.log('[CRM] Cloud save OK');
+    } else {
+      console.log('[CRM] Cloud save status:', res.status);
+    }
+  } catch(e) { console.log('[CRM] Cloud save failed:', e.message); }
+}
+
 // --- FILE HANDLE FOR AUTO-SAVE ---
 let fileHandle = null;
 let savePending = false;
@@ -1439,6 +1550,10 @@ function saveData(data) {
   } else {
     updateSaveStatus('no-handle');
   }
+
+  // 3. Cloud save to Supabase (debounced 3s)
+  if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => cloudSave(data), 3000);
 }
 
 async function writeToFileHandle() {
@@ -5290,6 +5405,8 @@ function inboxManualJob() {
 
 // ---- INIT ----
 render();
+// Load cloud data async (merges and re-renders if cloud has newer data)
+loadDataWithCloud();
 </script>
 </body>
 </html>
