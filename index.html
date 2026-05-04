@@ -4740,21 +4740,26 @@ function editJobNote(id) {
       <div style="font-size:11px;font-weight:600;color:var(--text-light);margin-bottom:8px;">MATCH ANALYSIS ${tierBadge(rel.tier)} <span style="font-weight:400;" id="dimScoreTotal">${rel.score}p</span></div>
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">Drag sliders to override auto-scores:</div>
       ${[
-        { key: 'roll', label: 'Role', auto: rel.dims.roll, max: 25 },
-        { key: 'bransch', label: 'Industry', auto: rel.dims.bransch, max: 15 },
-        { key: 'plats', label: 'Location', auto: rel.dims.plats, max: 15 },
-        { key: 'scope', label: 'Scope', auto: rel.dims.scope, max: 20 },
-        { key: 'bolag', label: 'Company', auto: rel.dims.bolag, max: 10 }
+        { key: 'roll', label: 'Role', auto: rel.dims.roll, max: 25, labels: ['No match','Wrong level','Adjacent role','Similar title','Exact role'] },
+        { key: 'bransch', label: 'Industry', auto: rel.dims.bransch, max: 15, labels: ['Unrelated','Loosely related','Transferable','Same sector','Exact industry'] },
+        { key: 'plats', label: 'Location', auto: rel.dims.plats, max: 15, labels: ['Relocation needed','Long commute','Commutable','Same city','Perfect match'] },
+        { key: 'scope', label: 'Scope', auto: rel.dims.scope, max: 20, labels: ['Much smaller/larger','Different focus','Partial overlap','Close fit','Exact match'] },
+        { key: 'bolag', label: 'Company', auto: rel.dims.bolag, max: 10, labels: ['Poor fit','Unknown','Decent','Strong interest','Dream company'] }
       ].map(d => {
         const ov = (j.dimOverrides || {})[d.key];
         const pct = ov !== undefined ? Math.round((ov / d.max) * 100) : Math.min(100, Math.max(0, Math.round(d.auto)));
         const isOv = ov !== undefined;
         const col = pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
-        return '<div style="display:flex;align-items:center;gap:6px;margin:5px 0;">' +
+        const labelIdx = Math.round(pct / 25);
+        const currentLabel = d.labels[labelIdx] || '';
+        return '<div style="margin:6px 0;">' +
+          '<div style="display:flex;align-items:center;gap:6px;">' +
           '<span style="font-size:11px;width:58px;color:var(--text-light);font-weight:' + (isOv ? '700' : '400') + ';">' + d.label + (isOv ? ' *' : '') + '</span>' +
-          '<input type="range" min="0" max="100" step="25" value="' + pct + '" data-dim="' + d.key + '" data-max="' + d.max + '" class="dim-slider" style="flex:1;height:20px;cursor:pointer;accent-color:' + col + ';" oninput="updateDimSlider(this)">' +
+          '<input type="range" min="0" max="100" step="25" value="' + pct + '" data-dim="' + d.key + '" data-max="' + d.max + '" data-labels="' + escHtml(d.labels.join('|')) + '" class="dim-slider" style="flex:1;height:20px;cursor:pointer;accent-color:' + col + ';" oninput="updateDimSlider(this)">' +
           '<span class="dim-slider-val" style="font-size:11px;width:32px;text-align:right;color:var(--text-light);">' + pct + '%</span>' +
           '<button style="font-size:9px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;background:white;cursor:pointer;color:var(--text-light);' + (isOv ? '' : 'opacity:0.3;pointer-events:none;') + '" onclick="resetDimSlider(this,\'' + d.key + '\',' + Math.min(100, Math.max(0, Math.round(d.auto))) + ')" title="Reset to auto">&#8634;</button>' +
+          '</div>' +
+          '<div class="dim-slider-label" style="font-size:10px;color:' + col + ';margin-left:64px;margin-top:1px;">' + currentLabel + '</div>' +
           '</div>';
       }).join('')}
       ${rel.reasons.length > 0 ? '<div style="font-size:12px;margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">' + rel.reasons.map(r => '<div style="margin:2px 0;">- ' + escHtml(r) + '</div>').join('') + '</div>' : ''}
@@ -4778,10 +4783,22 @@ function updateDimSlider(el) {
   // Enable the reset button
   var resetBtn = valSpan ? valSpan.nextElementSibling : null;
   if (resetBtn) { resetBtn.style.opacity = '1'; resetBtn.style.pointerEvents = 'auto'; }
-  // Update label to show override marker
-  var label = el.previousElementSibling;
-  if (label && !label.textContent.includes('*')) label.textContent = label.textContent.trim() + ' *';
-  label.style.fontWeight = '700';
+  // Update dimension name label to show override marker
+  var nameLabel = el.previousElementSibling;
+  if (nameLabel && !nameLabel.textContent.includes('*')) nameLabel.textContent = nameLabel.textContent.trim() + ' *';
+  if (nameLabel) nameLabel.style.fontWeight = '700';
+  // Update slider description label
+  var labelsAttr = el.getAttribute('data-labels');
+  if (labelsAttr) {
+    var labels = labelsAttr.split('|');
+    var idx = Math.round(pct / 25);
+    var row = el.closest('div[style*="margin:6px"]') || el.parentElement.parentElement;
+    var descLabel = row.querySelector('.dim-slider-label');
+    if (descLabel) {
+      descLabel.textContent = labels[idx] || '';
+      descLabel.style.color = col;
+    }
+  }
   // Recalculate total score preview
   recalcDimTotal();
 }
@@ -4790,13 +4807,26 @@ function resetDimSlider(btn, dimKey, autoPct) {
   var row = btn.parentElement;
   var slider = row.querySelector('input[type="range"]');
   var valSpan = row.querySelector('.dim-slider-val');
-  if (slider) { slider.value = autoPct; slider.style.accentColor = autoPct >= 70 ? 'var(--success)' : autoPct >= 40 ? 'var(--warning)' : 'var(--danger)'; }
+  var col = autoPct >= 70 ? 'var(--success)' : autoPct >= 40 ? 'var(--warning)' : 'var(--danger)';
+  if (slider) { slider.value = autoPct; slider.style.accentColor = col; }
   if (valSpan) valSpan.textContent = autoPct + '%';
   btn.style.opacity = '0.3'; btn.style.pointerEvents = 'none';
   // Remove override marker from label
-  var label = row.querySelector('span');
-  if (label) { label.textContent = label.textContent.replace(' *', ''); label.style.fontWeight = '400'; }
-  slider.removeAttribute('data-overridden');
+  var nameLabel = row.querySelector('span');
+  if (nameLabel) { nameLabel.textContent = nameLabel.textContent.replace(' *', ''); nameLabel.style.fontWeight = '400'; }
+  // Update slider description label
+  var outerDiv = row.parentElement;
+  var descLabel = outerDiv ? outerDiv.querySelector('.dim-slider-label') : null;
+  if (descLabel && slider) {
+    var labelsAttr = slider.getAttribute('data-labels');
+    if (labelsAttr) {
+      var labels = labelsAttr.split('|');
+      var idx = Math.round(autoPct / 25);
+      descLabel.textContent = labels[idx] || '';
+      descLabel.style.color = col;
+    }
+  }
+  if (slider) slider.removeAttribute('data-overridden');
   recalcDimTotal();
 }
 
