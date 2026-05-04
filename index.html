@@ -1019,7 +1019,7 @@ function renderSwipeBoard() {
   let html = '<div class="page-header"><h2>Job Board</h2></div>';
 
   // Quick add
-  html += '<div class="quick-add"><input type="text" id="quickJobUrl" placeholder="Paste a job link..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddJob();}"><button class="btn btn-primary" onclick="quickAddJob()">Save</button></div>';
+  html += '<div class="quick-add"><input type="text" id="quickJobUrl" placeholder="Paste a job link..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddJob();}"><button class="btn btn-primary" onclick="quickAddJob()">Analyze</button><button class="btn btn-ghost" style="font-size:11px;padding:8px 12px;" onclick="openPasteJobModal()" title="Paste job description text">&#128203; Paste</button></div>';
 
   // Stats bar
   html += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">';
@@ -4338,15 +4338,70 @@ function saveAnalyzedJob() {
 
 function openPasteJobModal() {
   var html = '<div style="font-size:13px;">' +
-    '<p style="color:var(--text-light);margin-bottom:12px;">Paste the job ad text from LinkedIn or any job site. Include as much detail as possible (title, company, description, requirements).</p>' +
+    '<p style="color:var(--text-light);margin-bottom:12px;">Paste the job ad text or upload a saved HTML page. Works great for LinkedIn, headhunter sites, or any job ad.</p>' +
     '<input type="text" id="pasteJobUrl" placeholder="Job URL (optional)" style="width:100%;font-size:12px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">' +
-    '<textarea id="pasteJobText" placeholder="Paste the full job ad text here..." style="width:100%;height:250px;font-size:12px;padding:10px;border:1px solid var(--border);border-radius:8px;resize:vertical;font-family:inherit;line-height:1.5;"></textarea>' +
+    '<textarea id="pasteJobText" placeholder="Paste the full job ad text here (Ctrl+A, Ctrl+C from the job page)..." style="width:100%;height:200px;font-size:12px;padding:10px;border:1px solid var(--border);border-radius:8px;resize:vertical;font-family:inherit;line-height:1.5;"></textarea>' +
+    '<div style="margin-top:8px;padding:10px;border:2px dashed var(--border);border-radius:8px;text-align:center;cursor:pointer;" onclick="document.getElementById(\'pasteJobFile\').click()">' +
+    '<input type="file" id="pasteJobFile" accept=".html,.htm,.txt,.pdf,.mhtml" style="display:none;" onchange="handleJobFileUpload(this)">' +
+    '<span style="font-size:12px;color:var(--text-light);">&#128196; Or drag and drop / click to upload a saved page (.html, .txt)</span></div>' +
     '</div>';
   var footer = '<div style="display:flex;gap:8px;">' +
     '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" onclick="analyzeFromPaste()">Analyze &amp; Add</button></div>';
   openModal('Paste Job Ad', html, footer);
   setTimeout(function() { var ta = document.getElementById('pasteJobText'); if (ta) ta.focus(); }, 200);
+}
+
+function handleJobFileUpload(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var content = e.target.result;
+    // If HTML, strip tags to get plain text
+    if (file.name.endsWith('.html') || file.name.endsWith('.htm') || file.name.endsWith('.mhtml')) {
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(content, 'text/html');
+      // Try JSON-LD first
+      var jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+      var foundJobPosting = false;
+      for (var i = 0; i < jsonLdScripts.length; i++) {
+        try {
+          var ld = JSON.parse(jsonLdScripts[i].textContent);
+          if (Array.isArray(ld)) ld = ld.find(function(item) { return item['@type'] === 'JobPosting'; }) || ld[0];
+          if (ld['@graph']) ld = ld['@graph'].find(function(item) { return item['@type'] === 'JobPosting'; }) || ld;
+          if (ld && ld['@type'] === 'JobPosting') {
+            var ta = document.getElementById('pasteJobText');
+            var structured = '';
+            if (ld.title) structured += ld.title + '\n';
+            if (ld.hiringOrganization) structured += 'Company: ' + (typeof ld.hiringOrganization === 'string' ? ld.hiringOrganization : ld.hiringOrganization.name || '') + '\n';
+            if (ld.jobLocation) {
+              var loc = Array.isArray(ld.jobLocation) ? ld.jobLocation[0] : ld.jobLocation;
+              if (loc.address) structured += 'Location: ' + (typeof loc.address === 'string' ? loc.address : loc.address.addressLocality || loc.address.addressRegion || '') + '\n';
+            }
+            if (ld.description) structured += '\n' + ld.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            if (ta) ta.value = structured;
+            foundJobPosting = true;
+            toast('Extracted job posting data from HTML');
+            break;
+          }
+        } catch(ex) {}
+      }
+      if (!foundJobPosting) {
+        // Fall back to body text
+        var bodyText = (doc.querySelector('main') || doc.querySelector('article') || doc.querySelector('.content') || doc.body || {}).textContent || '';
+        var ta = document.getElementById('pasteJobText');
+        if (ta) ta.value = bodyText.replace(/\s+/g, ' ').trim();
+        toast('Extracted text from HTML file');
+      }
+    } else {
+      // Plain text
+      var ta = document.getElementById('pasteJobText');
+      if (ta) ta.value = content;
+      toast('File loaded');
+    }
+  };
+  reader.readAsText(file);
 }
 
 function analyzeFromPaste() {
