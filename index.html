@@ -1187,25 +1187,26 @@ function cycleDimScore(jobId, dimKey, maxPts) {
   if (!j) return;
   if (!j.dimOverrides) j.dimOverrides = {};
 
-  // Cycle: auto -> 0% -> 25% -> 50% -> 75% -> 100% -> back to auto
+  // Cycle: auto -> 100% -> 75% -> 50% -> 25% -> 0% -> back to auto
+  // Starts at max so one tap = full score (most common use case)
   var levels = [
-    Math.round(maxPts * 0),
-    Math.round(maxPts * 0.25),
-    Math.round(maxPts * 0.5),
+    maxPts,
     Math.round(maxPts * 0.75),
-    maxPts
+    Math.round(maxPts * 0.5),
+    Math.round(maxPts * 0.25),
+    0
   ];
 
   var current = j.dimOverrides[dimKey];
   if (current === undefined) {
-    // First tap: set to 0
+    // First tap: set to 100%
     j.dimOverrides[dimKey] = levels[0];
   } else {
     var idx = levels.indexOf(current);
     if (idx >= 0 && idx < levels.length - 1) {
       j.dimOverrides[dimKey] = levels[idx + 1];
     } else {
-      // At max or unknown - remove override (back to auto)
+      // At 0% or unknown - remove override (back to auto)
       delete j.dimOverrides[dimKey];
       if (Object.keys(j.dimOverrides).length === 0) delete j.dimOverrides;
     }
@@ -3027,8 +3028,8 @@ function getRelevanceScore(job) {
     else if (noteIndustry.length === 1) { score += 4; dims.bransch = 25; reasons.push('Industry (note): ' + noteIndustry[0]); }
   }
 
-  // --- Location (max 15) - scored against note + title (where location info lives) ---
-  const locText = [note, job.title || '', job.industry || ''].join(' ').toLowerCase();
+  // --- Location (max 15) - scored against location + note + title ---
+  const locText = [job.location || '', note, job.title || '', job.industry || ''].join(' ').toLowerCase();
   const locationMatches = PROFILE.locations.filter(l => locText.includes(l));
   if (locationMatches.length > 0) { score += 15; dims.plats = 100; reasons.push('Location: ' + locationMatches[0]); }
 
