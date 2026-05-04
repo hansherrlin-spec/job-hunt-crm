@@ -4466,10 +4466,11 @@ function parseInbox() {
 
   // --- EML / Email header parsing ---
   var emlHeaders = {};
-  if (/^(?:MIME-Version|From|To|Subject|Date|Message-ID|Content-Type):/mi.test(text)) {
-    // Parse MIME headers (everything before first blank line or MIME boundary)
-    var headerBlock = text.split(/\n\n/)[0] || '';
-    var headerLines = headerBlock.replace(/\r\n/g, '\n').split('\n');
+  var normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (/^(?:MIME-Version|From|To|Subject|Date|Message-ID|Content-Type):/mi.test(normalizedText)) {
+    // Parse MIME headers (everything before first blank line)
+    var headerBlock = normalizedText.split('\n\n')[0] || '';
+    var headerLines = headerBlock.split('\n');
     var currentKey = '';
     headerLines.forEach(function(line) {
       var hm = line.match(/^([A-Za-z\-]+):\s*(.*)/);
@@ -4482,7 +4483,7 @@ function parseInbox() {
     var boundaryMatch = (emlHeaders['content-type'] || '').match(/boundary="?([^";\s]+)"?/);
     if (boundaryMatch) {
       var boundary = boundaryMatch[1];
-      var parts = text.split('--' + boundary);
+      var parts = normalizedText.split('--' + boundary);
       for (var pi = 0; pi < parts.length; pi++) {
         if (/Content-Type:\s*text\/plain/i.test(parts[pi])) {
           var bodyStart = parts[pi].indexOf('\n\n');
@@ -4490,15 +4491,36 @@ function parseInbox() {
           break;
         }
       }
+      // Fallback: if no text/plain, try to strip HTML from text/html
+      if (!plainBody) {
+        for (var pi2 = 0; pi2 < parts.length; pi2++) {
+          if (/Content-Type:\s*text\/html/i.test(parts[pi2])) {
+            var htmlStart = parts[pi2].indexOf('\n\n');
+            if (htmlStart >= 0) {
+              var rawHtml = parts[pi2].substring(htmlStart + 2);
+              // Decode quoted-printable
+              rawHtml = rawHtml.replace(/=\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, function(m, hex) { return String.fromCharCode(parseInt(hex, 16)); });
+              plainBody = rawHtml.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?(div|p|li|ul|ol|h[1-6])[^>]*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim();
+            }
+            break;
+          }
+        }
+      }
     }
-    if (!plainBody) plainBody = text;
-    // Clean up quoted-printable soft line breaks
-    plainBody = plainBody.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, function(m, hex) {
+    if (!plainBody) {
+      // No MIME parts - just take everything after headers
+      var afterHeaders = normalizedText.indexOf('\n\n');
+      if (afterHeaders > 0) plainBody = normalizedText.substring(afterHeaders + 2);
+    }
+    // Clean up quoted-printable
+    plainBody = plainBody.replace(/=\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, function(m, hex) {
       return String.fromCharCode(parseInt(hex, 16));
     });
     // Remove trailing MIME boundary
     var boundaryEnd = plainBody.indexOf('\n--');
     if (boundaryEnd > 0) plainBody = plainBody.substring(0, boundaryEnd).trim();
+    // Clean excess whitespace
+    plainBody = plainBody.replace(/\n{3,}/g, '\n\n').trim();
 
     // Parse From and To with name + email
     function parseEmailAddr(str) {
@@ -4518,47 +4540,77 @@ function parseInbox() {
     var hansEmails = ['hans.herrlin@gmail.com', 'hans@herrlin.se'];
     var isSentByHans = hansEmails.some(function(e) { return emlFrom.email.toLowerCase() === e; });
     var contact = isSentByHans ? emlTo : emlFrom;
-    var contactName = contact.name;
-    // Handle "LastName FirstName" format
-    if (contactName && contactName.indexOf(',') >= 0) {
-      var parts = contactName.split(',').map(function(s) { return s.trim(); });
-      contactName = parts[1] + ' ' + parts[0];
+    var contactName = contact.name || '';
+    // Handle "LastName FirstName" format with comma
+    if (contactName.indexOf(',') >= 0) {
+      var cnParts = contactName.split(',').map(function(s) { return s.trim(); });
+      contactName = cnParts[1] + ' ' + cnParts[0];
     }
-    // Handle "LastName FirstName" without comma (check if first word looks like a last name)
-    if (contactName && /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(contactName)) {
-      // Check if first word is likely a last name by seeing if email starts with second word
+    // Handle "LastName FirstName" without comma
+    if (/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(contactName)) {
       var nameParts = contactName.split(/\s+/);
       if (contact.email && contact.email.toLowerCase().startsWith(nameParts[1].toLowerCase())) {
         contactName = nameParts[1] + ' ' + nameParts[0];
       }
     }
 
+    // Extract company from email domain
     var contactDomain = contact.email ? contact.email.split('@')[1] : '';
     var contactCompany = '';
     if (contactDomain && !['gmail.com','hotmail.com','outlook.com','yahoo.com','icloud.com','live.com','me.com'].includes(contactDomain.toLowerCase())) {
       contactCompany = contactDomain.split('.')[0].charAt(0).toUpperCase() + contactDomain.split('.')[0].slice(1);
     }
-    // Check against CRM companies
     var knownCo = DATA.companies.find(function(c) { return contactDomain && c.name && contactDomain.toLowerCase().includes(c.name.toLowerCase()); });
     if (knownCo) contactCompany = knownCo.name;
 
+    // Extract phone numbers from the body
+    var phoneRegex2 = /(?:\+\d{1,3}[\s\-]?)?(?:\(?\d{2,4}\)?[\s\-]?)?\d{3,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}/g;
+    var bodyPhones = (plainBody.match(phoneRegex2) || []).map(function(p) { return p.trim(); }).filter(function(p) { return p.replace(/\D/g, '').length >= 8; });
+    // Also check signature area (last 5 lines)
+    var bodyLines = plainBody.split('\n');
+    var sigArea = bodyLines.slice(-5).join('\n');
+    var sigPhones = (sigArea.match(phoneRegex2) || []).map(function(p) { return p.trim(); }).filter(function(p) { return p.replace(/\D/g, '').length >= 8; });
+    var contactPhone = sigPhones[0] || bodyPhones[0] || '';
+
+    // Detect companies/topics mentioned in body
+    var mentionedCompanies = [];
+    var companyPatterns = plainBody.match(/\*([^*]+)\*/g);
+    if (companyPatterns) {
+      companyPatterns.forEach(function(m) { mentionedCompanies.push(m.replace(/\*/g, '').trim()); });
+    }
+
     result.contacts.push({
-      name: contactName, email: contact.email, phone: '',
+      name: contactName, email: contact.email, phone: contactPhone,
       linkedin: '', company: contactCompany, role: '',
       source: 'Email (' + (isSentByHans ? 'sent' : 'received') + ')',
       notes: emlSubject
     });
 
-    // Create activity with clean body
+    // Build smart activity notes - include the full body, not just a snippet
     var actTitle = emlSubject || ('Email with ' + contactName);
-    var bodySummary = plainBody.replace(/\n{3,}/g, '\n\n').substring(0, 400);
+    if (contactName && !actTitle.toLowerCase().includes(contactName.split(' ')[0].toLowerCase())) {
+      actTitle += ' - ' + contactName;
+    }
+
+    // Detect next step hints from email body
+    var nextStepHints = [];
+    if (/follow[\s-]?up|get back|discuss further|let me know|schedule|set up a|next step/i.test(plainBody)) nextStepHints.push('follow_up');
+    if (/meeting|call|coffee|lunch|catch up/i.test(plainBody)) nextStepHints.push('schedule_meeting');
+    if (/send|share|attach|forward|provide/i.test(plainBody)) nextStepHints.push('send_info');
+    if (/apply|application|submit|resume|cv/i.test(plainBody)) nextStepHints.push('apply');
+    if (/interview|assessment|case|present/i.test(plainBody)) nextStepHints.push('prepare');
+    if (/question|clarif|more info|details/i.test(plainBody)) nextStepHints.push('ask_questions');
+    if (/offer|compensation|salary|remuneration/i.test(plainBody)) nextStepHints.push('negotiate');
 
     result.activities.push({
       title: actTitle,
       type: 'email',
       contactName: contactName,
-      notes: bodySummary,
-      rawContent: plainBody
+      notes: plainBody,
+      rawContent: normalizedText,
+      nextStepHints: nextStepHints,
+      mentionedCompanies: mentionedCompanies,
+      emlDate: emlDate
     });
 
     result.flags = { isEmail: true, isJobAd: false, isMeeting: false, isLinkedIn: false, isContactInfo: false };
@@ -4727,22 +4779,70 @@ function renderInboxResults() {
   // Activity section
   if (p.activities.length > 0) {
     const a = p.activities[0];
-    html += '<div style="background:var(--bg);padding:12px;border-radius:6px;margin-bottom:12px;">';
-    html += '<div style="font-size:12px;font-weight:600;color:var(--text-light);margin-bottom:8px;">ACTIVITY</div>';
+    const NEXT_STEPS = [
+      { id: 'follow_up', label: 'Follow up' },
+      { id: 'schedule_meeting', label: 'Schedule meeting' },
+      { id: 'send_info', label: 'Send info/docs' },
+      { id: 'apply', label: 'Apply / Send CV' },
+      { id: 'prepare', label: 'Prepare / Research' },
+      { id: 'ask_questions', label: 'Ask questions' },
+      { id: 'negotiate', label: 'Negotiate terms' },
+      { id: 'wait', label: 'Wait for reply' },
+      { id: 'intro', label: 'Ask for intro' },
+      { id: 'linkedin', label: 'Connect on LinkedIn' }
+    ];
+    const hints = a.nextStepHints || [];
+    const mentioned = a.mentionedCompanies || [];
+
+    html += '<div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:12px;">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;">ACTIVITY</div>';
+
+    // Title + type row
     html += '<div class="form-row"><div class="form-group"><label>Title</label><input id="inbox_atitle" value="' + escHtml(a.title) + '"></div>';
     html += '<div class="form-group"><label>Type</label><select id="inbox_atype">';
     ['email','call','meeting','application','linkedin','follow-up','other'].forEach(t => {
       html += '<option value="' + t + '"' + (a.type === t ? ' selected' : '') + '>' + t + '</option>';
     });
     html += '</select></div></div>';
-    html += '<div class="form-group"><label>Notes (summary)</label><textarea id="inbox_anotes" style="max-height:80px;">' + escHtml(a.notes) + '</textarea></div>';
-    html += '<div style="font-size:11px;color:var(--text-light);margin-bottom:6px;">Full content + files will be saved as raw content automatically.</div>';
+
+    // Date
+    if (a.emlDate) {
+      const dateStr = new Date(a.emlDate).toISOString().split('T')[0];
+      html += '<div class="form-group"><label>Date</label><input id="inbox_adate" type="date" value="' + dateStr + '"></div>';
+    }
+
+    // Mentioned companies
+    if (mentioned.length > 0) {
+      html += '<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:var(--text-light);margin-bottom:4px;">COMPANIES MENTIONED</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+      mentioned.forEach(function(c) { html += '<span style="font-size:12px;padding:4px 10px;background:var(--purple-light);color:var(--purple);border-radius:12px;">' + escHtml(c) + '</span>'; });
+      html += '</div></div>';
+    }
+
+    // Notes - large and prominent
+    html += '<div class="form-group"><label style="font-size:13px;">Notes & Summary</label>';
+    html += '<textarea id="inbox_anotes" style="min-height:180px;font-size:13px;line-height:1.6;">' + escHtml(a.notes) + '</textarea></div>';
+
+    // Next steps - chip selector
+    html += '<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:600;color:var(--text-light);margin-bottom:6px;">NEXT STEPS</div>';
+    html += '<div id="inboxNextSteps" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
+    NEXT_STEPS.forEach(function(ns) {
+      const isHinted = hints.indexOf(ns.id) >= 0;
+      html += '<label style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:16px;font-size:12px;cursor:pointer;border:1px solid ' + (isHinted ? 'var(--primary)' : 'var(--border)') + ';background:' + (isHinted ? 'var(--primary-light)' : 'white') + ';transition:all 0.15s;min-height:34px;">';
+      html += '<input type="checkbox" value="' + ns.id + '"' + (isHinted ? ' checked' : '') + ' style="width:14px;height:14px;" onchange="this.parentElement.style.borderColor=this.checked?\'var(--primary)\':\'var(--border)\';this.parentElement.style.background=this.checked?\'var(--primary-light)\':\'white\';"> ' + ns.label + '</label>';
+    });
+    html += '</div>';
+    html += '<input type="text" id="inbox_nextstep_free" placeholder="Or type a custom next step..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;">';
+    html += '</div>';
+
+    // Link to contact
     if (DATA.contacts.length > 0) {
       html += '<div class="form-group"><label>Link to contact</label><select id="inbox_acontact"><option value="">- None -</option>';
-      DATA.contacts.forEach(ct => { html += '<option value="' + ct.id + '">' + escHtml(ct.name) + (ct.company ? ' (' + escHtml(ct.company) + ')' : '') + '</option>'; });
+      DATA.contacts.forEach(ct => { html += '<option value="' + ct.id + '"' + (a.contactName && ct.name && ct.name.toLowerCase().includes(a.contactName.split(' ')[0].toLowerCase()) ? ' selected' : '') + '>' + escHtml(ct.name) + (ct.company ? ' (' + escHtml(ct.company) + ')' : '') + '</option>'; });
       html += '</select></div>';
     }
-    html += '<button class="btn btn-primary btn-sm" onclick="inboxSaveActivity()" style="margin-top:6px;">Save Activity</button>';
+
+    html += '<button class="btn btn-primary" onclick="inboxSaveActivity()" style="margin-top:6px;width:100%;justify-content:center;">Save Activity</button>';
     html += '</div>';
   }
 
