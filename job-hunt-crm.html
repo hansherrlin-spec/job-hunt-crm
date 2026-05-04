@@ -3170,14 +3170,61 @@ function getPreferenceAdjustment(job) {
   const jobIndustry = (job.industry || '').toLowerCase();
   const jobRole = (job.role || '').toLowerCase();
   const jobNote = (job.note || '').toLowerCase();
+  const jobAll = [jobRole, jobIndustry, jobNote, (job.company || ''), (job.description || '')].join(' ').toLowerCase();
   let adj = 0;
   let reasons = [];
 
-  // Learn from qualified jobs: boost similar industries/roles
+  // --- Extract learned keywords from freeText comments ---
+  const positiveKeywords = new Map();
+  const negativeKeywords = new Map();
+  const stopWords = new Set(['the','a','an','is','was','are','for','and','but','not','too','very','this','that','with','has','had','have','been','will','would','could','should','just','also','its','they','their','there','here','from','into','about','than','then','when','what','which','where','who','how','all','each','both','few','more','most','some','such','only','same','other','role','good','like','want','dont','really','much','many']);
+
+  function extractKeywords(text) {
+    if (!text) return [];
+    return text.toLowerCase()
+      .replace(/[^a-zåäöøæ0-9\s\-]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 3 && !stopWords.has(w));
+  }
+
+  for (const q of prefs.qualified) {
+    const words = extractKeywords(q.freeText);
+    words.forEach(w => positiveKeywords.set(w, (positiveKeywords.get(w) || 0) + 1));
+  }
+  for (const d of prefs.disqualified) {
+    const words = extractKeywords(d.freeText);
+    words.forEach(w => negativeKeywords.set(w, (negativeKeywords.get(w) || 0) + 1));
+  }
+
+  // --- Apply keyword matches from comments ---
+  let posKeywordHits = 0;
+  let negKeywordHits = 0;
+  for (const [kw, count] of positiveKeywords) {
+    if (negativeKeywords.has(kw)) continue;
+    if (jobAll.includes(kw)) {
+      posKeywordHits += Math.min(count, 2);
+    }
+  }
+  for (const [kw, count] of negativeKeywords) {
+    if (positiveKeywords.has(kw)) continue;
+    if (jobAll.includes(kw)) {
+      negKeywordHits += Math.min(count, 2);
+    }
+  }
+  if (posKeywordHits > 0) {
+    adj += Math.min(6, posKeywordHits * 2);
+    reasons.push('Matches keywords from approved comments');
+  }
+  if (negKeywordHits > 0) {
+    adj -= Math.min(8, negKeywordHits * 2);
+    reasons.push('Matches keywords from rejected comments');
+  }
+
+  // --- Learn from qualified jobs: boost similar industries/roles ---
   for (const q of prefs.qualified) {
     const qi = (q.industry || '').toLowerCase();
     const qr = (q.role || '').toLowerCase();
-    if (qi && jobIndustry && qi.split(/[\/,]/).some(w => jobIndustry.includes(w.trim()))) {
+    if (qi && jobIndustry && qi.split(/[/,]/).some(w => jobIndustry.includes(w.trim()))) {
       adj += 3;
       if (!reasons.includes('Similar industry to approved job')) reasons.push('Similar industry to approved job');
     }
@@ -3187,24 +3234,45 @@ function getPreferenceAdjustment(job) {
     }
   }
 
-  // Learn from disqualified jobs: penalize similar patterns
+  // --- Learn from disqualified jobs: penalize similar patterns ---
   for (const d of prefs.disqualified) {
     const di = (d.industry || '').toLowerCase();
     const dr = (d.role || '').toLowerCase();
-    if (di && jobIndustry && di.split(/[\/,]/).some(w => jobIndustry.includes(w.trim()))) {
+    if (di && jobIndustry && di.split(/[/,]/).some(w => jobIndustry.includes(w.trim()))) {
       adj -= 4;
       if (!reasons.includes('Similar industry to rejected job')) reasons.push('Similar industry to rejected job');
     }
-    // Penalize if disqualified for specific structural reasons
-    if (d.reasons && d.reasons.includes('too_junior') && /(executive|manager|specialist|coordinator)/i.test(jobRole)) {
+    if (d.reasons && d.reasons.includes('too_junior') && /(executive|manager|specialist|coordinator)/i.test(jobRole)) {
       adj -= 3;
     }
     if (d.reasons && d.reasons.includes('wrong_location') && jobNote) {
       const dNote = (d.note || '').toLowerCase();
-      // If both are in same non-preferred location
       if (dNote.includes('stockholm') && jobNote.includes('stockholm')) { adj -= 3; }
       if (dNote.includes('copenhagen') && jobNote.includes('copenhagen')) { adj -= 2; }
     }
+    if (d.reasons && d.reasons.includes('too_junior') && dr) {
+      const juniorWords = dr.split(/\s+/).filter(w => w.length > 4);
+      if (juniorWords.some(w => jobRole.includes(w))) {
+        adj -= 2;
+        if (!reasons.includes('Similar to rejected junior role')) reasons.push('Similar to rejected junior role');
+      }
+    }
+    if (d.reasons && d.reasons.includes('low_scope')) {
+      const dFt = (d.freeText || '').toLowerCase();
+      const scopeWarnings = ['small','narrow','limited','niche','tiny'].filter(w => dFt.includes(w));
+      if (scopeWarnings.some(w => jobNote.includes(w) || jobAll.includes(w))) {
+        adj -= 2;
+        if (!reasons.includes('Similar scope concern')) reasons.push('Similar scope concern');
+      }
+    }
+  }
+
+  // --- Learn company stage preferences ---
+  const approvedScaleup = prefs.qualified.some(q => /scaleup|scale-up|startup|growth|series/.test((q.note || '').toLowerCase()));
+  const rejectedScaleup = prefs.disqualified.some(d => d.reasons && d.reasons.includes('wrong_company') && /scaleup|scale-up|startup|growth|series/.test((d.note || '').toLowerCase()));
+  if (approvedScaleup && !rejectedScaleup && /scaleup|scale-up|startup|growth|series/.test(jobAll)) {
+    adj += 2;
+    if (!reasons.includes('Preferred company stage')) reasons.push('Preferred company stage');
   }
 
   return { adj: Math.max(-15, Math.min(15, adj)), reasons };
@@ -3245,6 +3313,23 @@ function renderJobBoard() {
       <div class="filter-tab ${jobBoardFilter === 'qualified' ? 'active' : ''}" onclick="jobBoardFilter='qualified';render()">Approved (${qualifiedCount})</div>
       <div class="filter-tab ${jobBoardFilter === 'disqualified' ? 'active' : ''}" onclick="jobBoardFilter='disqualified';render()">Rejected (${disqualifiedCount})</div>
       <div class="filter-tab ${jobBoardFilter === 'applied' ? 'active' : ''}" onclick="jobBoardFilter='applied';render()">Applied (${appliedCount})</div>
+    </div>
+    <div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="toggleHeadhunterSearch()">&#128270; Search Headhunter Jobs</button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="requestMoreJobs()">&#128269; Find More Jobs</button>
+    </div>
+    <div id="hhJobSearchPanel" style="display:none;margin-bottom:16px;padding:14px;background:var(--bg);border-radius:12px;border:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:600;">Headhunter Job Pages</span>
+        <span style="font-size:11px;color:var(--text-light);">${(DATA.headhunters || []).length} firms</span>
+      </div>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:10px;">Click to open each headhunter's current job listings:</p>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${getHeadhunterSearchButtons()}
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+        <button class="btn btn-primary" style="font-size:12px;padding:6px 14px;" onclick="openAllHeadhunterJobs()">Open All (new tabs)</button>
+      </div>
     </div>
     ${filtered.length === 0 ? (jobBoardFilter === 'toReview' ?
       '<div class="empty"><div class="icon">&#10024;</div><div>All jobs reviewed!</div><button class="btn btn-primary" style="margin-top:12px;" onclick="requestMoreJobs()">Find more jobs</button></div>' :
@@ -3388,6 +3473,76 @@ function resetQualification(jobId) {
   render();
 }
 
+function toggleHeadhunterSearch() {
+  var panel = document.getElementById('hhJobSearchPanel');
+  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+var HH_JOB_URLS = {
+  'Egon Zehnder': 'https://www.egonzehnder.com/search-results?type=positions',
+  'Signium': 'https://www.signium.com/opportunities/',
+  'Amrop': 'https://www.amrop.se/executive-search',
+  'Mercuri Urval': 'https://www.mercuriurval.com/sv-se/lediga-jobb/',
+  'Heim Executive': 'https://www.heimexecutive.se/uppdrag/',
+  'CAPA': 'https://www.capa.se/lediga-jobb/',
+  'Academic Search International': 'https://www.academicsearch.se/lediga-jobb/',
+  'Finnveden Executive': 'https://www.finnvedenexecutive.se/lediga-uppdrag/',
+  'Isaksson Rekrytering': 'https://www.isakssonrekrytering.se/lediga-tjanster/',
+  'ONYX Executive Search': 'https://www.onyxexecutive.se/lediga-tjanster/',
+  'Nexer Recruit': 'https://www.nexergroup.com/career/',
+  'Ants Executive': 'https://www.antsexecutive.se/lediga-jobb/',
+  'Novare': 'https://www.novare.se/lediga-uppdrag/',
+  'Stanton Chase': 'https://www.stantonchase.com/positions',
+  'Hays Sweden': 'https://www.hays.se/jobb/sokresultat',
+  'Hammer & Hanborg': 'https://www.hammerhanborg.com/jobbsokande/lediga-jobb/',
+  'Growth Nordic': 'https://www.growthnordic.com/jobs',
+  'Executive Recruitment': 'https://www.executiverecruitment.se/lediga-jobb/',
+  'Jobway': 'https://www.jobway.se/lediga-jobb/',
+  'OnePartnerGroup': 'https://www.onepartnergroup.se/lediga-jobb/',
+  'Lisberg': 'https://www.lisberg.se/uppdrag/'
+};
+
+function getHeadhunterSearchButtons() {
+  var hh = DATA.headhunters || [];
+  if (hh.length === 0) return '<span style="font-size:11px;color:var(--text-light);">No headhunters added yet. Go to Headhunters page to add some.</span>';
+  var html = '';
+  hh.forEach(function(h) {
+    var url = HH_JOB_URLS[h.firm] || (h.website ? h.website : '');
+    if (!url) return;
+    var statusColor = h.status === 'active' ? 'var(--success)' : h.status === 'in_dialogue' ? 'var(--warning)' : h.status === 'contacted' ? 'var(--primary)' : 'var(--text-light)';
+    html += '<a href="' + escHtml(url) + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border);border-left:3px solid ' + statusColor + ';text-decoration:none;color:var(--text);background:white;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'white\'">' + escHtml(h.firm) + '</a>';
+  });
+  return html;
+}
+
+function openAllHeadhunterJobs() {
+  var hh = DATA.headhunters || [];
+  var opened = 0;
+  hh.forEach(function(h) {
+    var url = HH_JOB_URLS[h.firm] || (h.website ? h.website : '');
+    if (url && opened < 10) {
+      window.open(url, '_blank');
+      opened++;
+    }
+  });
+  if (hh.length > 10) {
+    alert('Opened first 10. Click individual links for the rest.');
+  }
+}
+
+function getHeadhunterJobLinks(titles, location) {
+  var hh = DATA.headhunters || [];
+  if (hh.length === 0) return '<span style="font-size:11px;color:var(--text-light);">No headhunters added yet.</span>';
+  var links = '';
+  hh.forEach(function(h) {
+    var url = HH_JOB_URLS[h.firm] || (h.website ? h.website : '');
+    if (!url) return;
+    var statusColor = h.status === 'active' ? 'var(--success)' : h.status === 'in_dialogue' ? 'var(--warning)' : 'var(--text-light)';
+    links += '<a href="' + escHtml(url) + '" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:5px 10px;border-left:2px solid ' + statusColor + ';">' + escHtml(h.firm) + '</a>';
+  });
+  return links;
+}
+
 function requestMoreJobs() {
   // Build search queries from dream job definition
   var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : getDefaultJobbmal().dream;
@@ -3410,6 +3565,11 @@ function requestMoreJobs() {
     '<a href="https://arbetsformedlingen.se/platsbanken/annonser?q=' + encodeURIComponent(titles[0] + ' ' + location) + '" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">Platsbanken</a>' +
     '<a href="https://thehub.io/jobs?search=' + encodeURIComponent(titles[0]) + '&location=Copenhagen" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">The Hub</a>' +
     '<a href="https://meetfrank.com/scaleup-jobs-in-stockholm-and-sweden-and-malmo-and-gothenburg" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">MeetFrank</a>' +
+    '</div></div>' +
+    '<div id="jobSearchHeadhunters" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">' +
+    '<p style="font-size:12px;color:var(--text-light);margin-bottom:8px;font-weight:600;">Headhunter Job Pages:</p>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+    getHeadhunterJobLinks(titles, location) +
     '</div></div></div>';
 
   openModal('Find Jobs', modalHtml, '<button class="btn btn-ghost" onclick="closeModal()">Close</button>');
