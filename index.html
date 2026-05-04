@@ -1111,6 +1111,7 @@ function renderSwipeBoard() {
   html += '<button class="swipe-btn info" onclick="editJobNote(\'' + j.id + '\')" title="Edit details">&#9998;</button>';
   html += '<button class="swipe-btn approve" onclick="swipeDecide(\'approve\')" title="Approve">&#10003;</button>';
   html += '</div>';
+  html += '<div style="text-align:center;margin-top:8px;"><button onclick="deleteJob(\'' + j.id + '\')" style="font-size:11px;color:var(--text-light);background:none;border:none;cursor:pointer;padding:4px 8px;text-decoration:underline;">&#128465; Delete this job</button></div>';
 
   // Comment panel (shown after swipe decision)
   if (swipeDecision) {
@@ -4195,8 +4196,9 @@ async function quickAddJob() {
   input.value = '';
 
   if (!parsed) {
-    // Fallback: just save with URL-derived title
+    // Fallback: save with URL-derived title and open edit form
     var title = '';
+    var isLinkedIn = fullUrl.includes('linkedin.com');
     try {
       var u = new URL(fullUrl);
       var host = u.hostname.replace('www.', '');
@@ -4207,10 +4209,25 @@ async function quickAddJob() {
     var id = genId();
     DATA.savedJobs.push({ id: id, url: fullUrl, title: title, company: '', role: '', industry: '', note: '', description: '', reviewed: false, applied: false, addedAt: today() });
     saveData(DATA);
-    closeModal();
-    toast('Could not fetch ad - saved with basic info. Edit to add details.');
+
+    var failMsg = isLinkedIn ?
+      '<div style="text-align:center;padding:20px;font-size:13px;">' +
+      '<div style="font-size:32px;margin-bottom:12px;">&#128274;</div>' +
+      '<p style="font-weight:600;margin-bottom:8px;">LinkedIn requires login to view job ads</p>' +
+      '<p style="color:var(--text-light);margin-bottom:16px;">The job has been saved to your board. Please fill in the details manually from the LinkedIn page.</p>' +
+      '<div style="display:flex;gap:8px;justify-content:center;">' +
+      '<a href="' + escHtml(fullUrl) + '" target="_blank" class="btn btn-ghost" style="font-size:12px;">Open on LinkedIn &#8599;</a>' +
+      '<button class="btn btn-primary" style="font-size:12px;" onclick="closeModal();setTimeout(function(){editJobNote(\'' + id + '\')},150);">Fill in Details</button>' +
+      '</div></div>' :
+      '<div style="text-align:center;padding:20px;font-size:13px;">' +
+      '<div style="font-size:32px;margin-bottom:12px;">&#128533;</div>' +
+      '<p style="font-weight:600;margin-bottom:8px;">Could not fetch job details</p>' +
+      '<p style="color:var(--text-light);margin-bottom:16px;">The site may block automated access. The job has been saved - please fill in the details manually.</p>' +
+      '<button class="btn btn-primary" style="font-size:12px;" onclick="closeModal();setTimeout(function(){editJobNote(\'' + id + '\')},150);">Fill in Details</button>' +
+      '</div>';
+
+    openModal('Job Saved', failMsg, '<button class="btn btn-ghost" onclick="closeModal();render();">Close</button>');
     render();
-    setTimeout(function() { editJobNote(id); }, 150);
     return;
   }
 
@@ -4313,10 +4330,36 @@ async function fetchAndParseJobAd(url) {
   var progressEl = document.getElementById('analyzeProgress');
 
   try {
-    if (progressEl) progressEl.textContent = 'Fetching page...';
+    // LinkedIn special handling: extract job ID and use public view URL
+    var linkedinJobId = null;
+    if (url.includes('linkedin.com')) {
+      // Extract job ID from various LinkedIn URL formats
+      var jobIdMatch = url.match(/currentJobId=(\d+)/) || url.match(/jobs\/view\/(\d+)/) || url.match(/jobs\/(\d+)/);
+      if (jobIdMatch) {
+        linkedinJobId = jobIdMatch[1];
+        // Use the public job view URL (more likely to work with CORS proxy)
+        url = 'https://www.linkedin.com/jobs/view/' + linkedinJobId;
+        if (progressEl) progressEl.textContent = 'Found LinkedIn job #' + linkedinJobId + ', fetching...';
+      }
+    }
+
+    if (progressEl && !linkedinJobId) progressEl.textContent = 'Fetching page...';
     var resp = await fetch(PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      // If LinkedIn blocked via proxy, try alternative proxy
+      if (linkedinJobId) {
+        if (progressEl) progressEl.textContent = 'Trying alternative fetch...';
+        resp = await fetch('https://corsproxy.io/?' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+      }
+      if (!resp || !resp.ok) return null;
+    }
     var html = await resp.text();
+
+    // Check if we got a real page (not a login wall or empty response)
+    if (html.length < 500 || (html.includes('authwall') && !html.includes('JobPosting'))) {
+      if (progressEl) progressEl.textContent = 'Site requires login - could not fetch job details.';
+      return null;
+    }
     if (progressEl) progressEl.textContent = 'Parsing job details...';
 
     var parser = new DOMParser();
@@ -4411,6 +4454,14 @@ async function fetchAndParseJobAd(url) {
 function markJobReviewed(id) {
   const j = (DATA.savedJobs || []).find(x => x.id === id);
   if (j) { j.reviewed = true; saveData(DATA); render(); toast('Marked as reviewed'); }
+}
+
+function deleteJob(id) {
+  if (!confirm('Delete this job from your board?')) return;
+  DATA.savedJobs = (DATA.savedJobs || []).filter(function(j) { return j.id !== id; });
+  saveData(DATA);
+  render();
+  toast('Job deleted');
 }
 
 function editJobNote(id) {
