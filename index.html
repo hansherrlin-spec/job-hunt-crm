@@ -4253,21 +4253,22 @@ async function quickAddJob() {
   // Build analysis modal
   var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : {};
   var dims = [
-    { key: 'role', label: 'Role Fit', score: rel.dims.role, max: 25 },
-    { key: 'industry', label: 'Industry', score: rel.dims.industry, max: 15 },
-    { key: 'location', label: 'Location', score: rel.dims.location, max: 15 },
-    { key: 'scope', label: 'Scope/Level', score: rel.dims.scope, max: 20 },
-    { key: 'company', label: 'Company', score: rel.dims.company, max: 10 }
+    { key: 'roll', label: 'Role Fit', max: 25 },
+    { key: 'bransch', label: 'Industry', max: 15 },
+    { key: 'plats', label: 'Location', max: 15 },
+    { key: 'scope', label: 'Scope/Level', max: 20 },
+    { key: 'bolag', label: 'Company', max: 10 }
   ];
 
   var dimBars = dims.map(function(d) {
-    var pct = Math.round((d.score / d.max) * 100);
-    var barColor = pct >= 75 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : pct >= 25 ? 'var(--primary)' : 'var(--danger)';
+    var dimPct = rel.dims[d.key] || 0;
+    var pts = Math.round(dimPct / 100 * d.max);
+    var barColor = dimPct >= 75 ? 'var(--success)' : dimPct >= 50 ? 'var(--warning)' : dimPct >= 25 ? 'var(--primary)' : 'var(--danger)';
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
       '<span style="width:90px;font-size:11px;color:var(--text-light);">' + d.label + '</span>' +
       '<div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden;">' +
-      '<div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.3s;"></div></div>' +
-      '<span style="width:50px;font-size:11px;font-weight:600;text-align:right;">' + d.score + '/' + d.max + '</span></div>';
+      '<div style="width:' + dimPct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.3s;"></div></div>' +
+      '<span style="width:50px;font-size:11px;font-weight:600;text-align:right;">' + pts + '/' + d.max + '</span></div>';
   }).join('');
 
   var prefLine = '';
@@ -4431,21 +4432,22 @@ function analyzeFromPaste() {
   var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : {};
 
   var dims = [
-    { key: 'role', label: 'Role Fit', score: rel.dims.role, max: 25 },
-    { key: 'industry', label: 'Industry', score: rel.dims.industry, max: 15 },
-    { key: 'location', label: 'Location', score: rel.dims.location, max: 15 },
-    { key: 'scope', label: 'Scope/Level', score: rel.dims.scope, max: 20 },
-    { key: 'company', label: 'Company', score: rel.dims.company, max: 10 }
+    { key: 'roll', label: 'Role Fit', max: 25 },
+    { key: 'bransch', label: 'Industry', max: 15 },
+    { key: 'plats', label: 'Location', max: 15 },
+    { key: 'scope', label: 'Scope/Level', max: 20 },
+    { key: 'bolag', label: 'Company', max: 10 }
   ];
 
   var dimBars = dims.map(function(d) {
-    var pct = Math.round((d.score / d.max) * 100);
-    var barColor = pct >= 75 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : pct >= 25 ? 'var(--primary)' : 'var(--danger)';
+    var dimPct = rel.dims[d.key] || 0;
+    var pts = Math.round(dimPct / 100 * d.max);
+    var barColor = dimPct >= 75 ? 'var(--success)' : dimPct >= 50 ? 'var(--warning)' : dimPct >= 25 ? 'var(--primary)' : 'var(--danger)';
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
       '<span style="width:90px;font-size:11px;color:var(--text-light);">' + d.label + '</span>' +
       '<div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden;">' +
-      '<div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;"></div></div>' +
-      '<span style="width:50px;font-size:11px;font-weight:600;text-align:right;">' + d.score + '/' + d.max + '</span></div>';
+      '<div style="width:' + dimPct + '%;height:100%;background:' + barColor + ';border-radius:4px;"></div></div>' +
+      '<span style="width:50px;font-size:11px;font-weight:600;text-align:right;">' + pts + '/' + d.max + '</span></div>';
   }).join('');
 
   var prefLine = '';
