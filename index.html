@@ -4464,6 +4464,110 @@ function parseInbox() {
   const nameRegex = /^([A-ZÅÄÖÆØÜ][a-zåäöæøü]+(?:\s+[A-ZÅÄÖÆØÜ][a-zåäöæøü]+){1,3})\s*$/gm;
   const nameMatches = [...text.matchAll(nameRegex)].map(m => m[1].trim());
 
+  // --- EML / Email header parsing ---
+  var emlHeaders = {};
+  if (/^(?:MIME-Version|From|To|Subject|Date|Message-ID|Content-Type):/mi.test(text)) {
+    // Parse MIME headers (everything before first blank line or MIME boundary)
+    var headerBlock = text.split(/\n\n/)[0] || '';
+    var headerLines = headerBlock.replace(/\r\n/g, '\n').split('\n');
+    var currentKey = '';
+    headerLines.forEach(function(line) {
+      var hm = line.match(/^([A-Za-z\-]+):\s*(.*)/);
+      if (hm) { currentKey = hm[1].toLowerCase(); emlHeaders[currentKey] = (hm[2] || '').trim(); }
+      else if (currentKey && /^\s/.test(line)) { emlHeaders[currentKey] += ' ' + line.trim(); }
+    });
+
+    // Extract plain text body (between MIME boundaries, prefer text/plain)
+    var plainBody = '';
+    var boundaryMatch = (emlHeaders['content-type'] || '').match(/boundary="?([^";\s]+)"?/);
+    if (boundaryMatch) {
+      var boundary = boundaryMatch[1];
+      var parts = text.split('--' + boundary);
+      for (var pi = 0; pi < parts.length; pi++) {
+        if (/Content-Type:\s*text\/plain/i.test(parts[pi])) {
+          var bodyStart = parts[pi].indexOf('\n\n');
+          if (bodyStart >= 0) plainBody = parts[pi].substring(bodyStart + 2).trim();
+          break;
+        }
+      }
+    }
+    if (!plainBody) plainBody = text;
+    // Clean up quoted-printable soft line breaks
+    plainBody = plainBody.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, function(m, hex) {
+      return String.fromCharCode(parseInt(hex, 16));
+    });
+    // Remove trailing MIME boundary
+    var boundaryEnd = plainBody.indexOf('\n--');
+    if (boundaryEnd > 0) plainBody = plainBody.substring(0, boundaryEnd).trim();
+
+    // Parse From and To with name + email
+    function parseEmailAddr(str) {
+      if (!str) return { name: '', email: '' };
+      var m = str.match(/^"?([^"<]+)"?\s*<([^>]+)>/);
+      if (m) return { name: m[1].trim(), email: m[2].trim() };
+      var m2 = str.match(/([^\s@]+@[^\s@]+)/);
+      return { name: '', email: m2 ? m2[1] : str.trim() };
+    }
+
+    var emlFrom = parseEmailAddr(emlHeaders['from'] || '');
+    var emlTo = parseEmailAddr(emlHeaders['to'] || '');
+    var emlSubject = (emlHeaders['subject'] || '').trim();
+    var emlDate = (emlHeaders['date'] || '').trim();
+
+    // Determine who the contact is (not Hans)
+    var hansEmails = ['hans.herrlin@gmail.com', 'hans@herrlin.se'];
+    var isSentByHans = hansEmails.some(function(e) { return emlFrom.email.toLowerCase() === e; });
+    var contact = isSentByHans ? emlTo : emlFrom;
+    var contactName = contact.name;
+    // Handle "LastName FirstName" format
+    if (contactName && contactName.indexOf(',') >= 0) {
+      var parts = contactName.split(',').map(function(s) { return s.trim(); });
+      contactName = parts[1] + ' ' + parts[0];
+    }
+    // Handle "LastName FirstName" without comma (check if first word looks like a last name)
+    if (contactName && /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(contactName)) {
+      // Check if first word is likely a last name by seeing if email starts with second word
+      var nameParts = contactName.split(/\s+/);
+      if (contact.email && contact.email.toLowerCase().startsWith(nameParts[1].toLowerCase())) {
+        contactName = nameParts[1] + ' ' + nameParts[0];
+      }
+    }
+
+    var contactDomain = contact.email ? contact.email.split('@')[1] : '';
+    var contactCompany = '';
+    if (contactDomain && !['gmail.com','hotmail.com','outlook.com','yahoo.com','icloud.com','live.com','me.com'].includes(contactDomain.toLowerCase())) {
+      contactCompany = contactDomain.split('.')[0].charAt(0).toUpperCase() + contactDomain.split('.')[0].slice(1);
+    }
+    // Check against CRM companies
+    var knownCo = DATA.companies.find(function(c) { return contactDomain && c.name && contactDomain.toLowerCase().includes(c.name.toLowerCase()); });
+    if (knownCo) contactCompany = knownCo.name;
+
+    result.contacts.push({
+      name: contactName, email: contact.email, phone: '',
+      linkedin: '', company: contactCompany, role: '',
+      source: 'Email (' + (isSentByHans ? 'sent' : 'received') + ')',
+      notes: emlSubject
+    });
+
+    // Create activity with clean body
+    var actTitle = emlSubject || ('Email with ' + contactName);
+    var bodySummary = plainBody.replace(/\n{3,}/g, '\n\n').substring(0, 400);
+
+    result.activities.push({
+      title: actTitle,
+      type: 'email',
+      contactName: contactName,
+      notes: bodySummary,
+      rawContent: plainBody
+    });
+
+    result.flags = { isEmail: true, isJobAd: false, isMeeting: false, isLinkedIn: false, isContactInfo: false };
+    result.primaryType = 'activity';
+    inboxParsed = result;
+    render();
+    return;
+  }
+
   // --- vCard parsing ---
   if (text.includes('BEGIN:VCARD')) {
     const vcardName = (text.match(/FN[;:](.+)/i) || [])[1] || '';
