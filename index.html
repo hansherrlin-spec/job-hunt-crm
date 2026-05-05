@@ -2190,7 +2190,119 @@ function renderDashboard() {
   const allTargets = (DATA.weeklyTargets || []);
   const weeksTracked = allTargets.length;
 
-  return `
+  var isMobile = window.innerWidth <= 768;
+
+  if (isMobile) {
+    // === MOBILE DASHBOARD ===
+    var toReviewCount = savedJobs.filter(j => !j.reviewed && !j.rejected).length;
+    var unreviewedLabel = toReviewCount > 0 ? '<span style="color:var(--primary);font-weight:600;">' + toReviewCount + ' to review</span>' : '<span style="color:var(--text-muted);">All reviewed</span>';
+
+    return '<div style="margin-bottom:16px;">' +
+      '<h2 style="font-size:22px;font-weight:700;">Home</h2>' +
+      '<div style="font-size:13px;color:var(--text-muted);">' + formatDate(today()) + '</div>' +
+    '</div>' +
+
+    // Quick actions row
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">' +
+      '<button style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 4px;border:none;background:var(--card);border-radius:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'jobboard\')">' +
+        '<span style="font-size:24px;">&#128179;</span><span style="font-size:10px;font-weight:600;color:var(--text-light);">Swipe</span>' +
+      '</button>' +
+      '<button style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 4px;border:none;background:var(--card);border-radius:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'jobboard_list\')">' +
+        '<span style="font-size:24px;">&#128269;</span><span style="font-size:10px;font-weight:600;color:var(--text-light);">Search</span>' +
+      '</button>' +
+      '<button style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 4px;border:none;background:var(--card);border-radius:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'inbox\')">' +
+        '<span style="font-size:24px;">&#128229;</span><span style="font-size:10px;font-weight:600;color:var(--text-light);">Inbox</span>' +
+      '</button>' +
+      '<button style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 4px;border:none;background:var(--card);border-radius:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'dreamjob\')">' +
+        '<span style="font-size:24px;">&#127919;</span><span style="font-size:10px;font-weight:600;color:var(--text-light);">Dream Job</span>' +
+      '</button>' +
+    '</div>' +
+
+    // Stats grid - compact 2x3
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#128188;</span><div><div style="font-size:22px;font-weight:700;">' + savedJobs.length + '</div><div style="font-size:11px;color:var(--text-muted);">Jobs found</div></div></div>' +
+        '<div style="font-size:10px;margin-top:6px;">' + unreviewedLabel + '</div>' +
+      '</div>' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#128100;</span><div><div style="font-size:22px;font-weight:700;">' + totalContacts + '</div><div style="font-size:11px;color:var(--text-muted);">Contacts</div></div></div>' +
+        '<div style="font-size:10px;margin-top:6px;color:var(--text-muted);">' + totalCompanies + ' companies</div>' +
+      '</div>' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#9889;</span><div><div style="font-size:22px;font-weight:700;">' + thisWeekActivities + '</div><div style="font-size:11px;color:var(--text-muted);">This week</div></div></div>' +
+      '</div>' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#9998;</span><div><div style="font-size:22px;font-weight:700;">' + activeApps + '</div><div style="font-size:11px;color:var(--text-muted);">Applications</div></div></div>' +
+        '<div style="font-size:10px;margin-top:6px;color:var(--text-muted);">' + activeDialogues + ' active dialogues</div>' +
+      '</div>' +
+    '</div>' +
+
+    // Weekly targets - compact
+    (currentTarget ? '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);margin-bottom:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">&#127919;</span><span style="font-size:14px;font-weight:600;">Weekly Targets</span></div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span class="badge ' + (targetPct >= 100 ? 'badge-green' : targetPct >= 50 ? 'badge-yellow' : 'badge-red') + '" style="font-size:11px;">' + targetPct + '%</span>' +
+          '<a style="font-size:11px;cursor:pointer;color:var(--primary);" onclick="navigateTo(\'targets\')">Edit</a>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px;">' +
+        renderMobileTargetRow('Apps', weekActuals.applications, currentTarget.applications) +
+        renderMobileTargetRow('Contacts', weekActuals.contacts, currentTarget.contacts) +
+        renderMobileTargetRow('Meetings', weekActuals.meetings, currentTarget.meetings) +
+        renderMobileTargetRow('Follow-ups', weekActuals.followups, currentTarget.followups) +
+        renderMobileTargetRow('Jobs rev.', weekActuals.jobsReviewed, currentTarget.jobsReviewed) +
+      '</div>' +
+      ((currentTarget.keyActivities && currentTarget.keyActivities.length > 0) ?
+        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">' +
+        '<div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Key Activities (' + kaDone + '/' + kaTotal + ')</div>' +
+        currentTarget.keyActivities.map(function(ka,i) {
+          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;">' +
+            '<input type="checkbox" ' + (ka.done ? 'checked' : '') + ' style="width:18px;height:18px;" onchange="toggleKeyActivity(\'' + currentTarget.weekId + '\',' + i + ')">' +
+            '<span style="font-size:13px;' + (ka.done ? 'text-decoration:line-through;color:var(--text-muted);' : '') + '">' + escHtml(ka.text) + '</span></div>';
+        }).join('') + '</div>' : '') +
+    '</div>' :
+    '<div style="background:var(--card);border-radius:14px;padding:20px;box-shadow:var(--shadow-sm);margin-bottom:16px;text-align:center;">' +
+      '<div style="font-size:24px;margin-bottom:6px;">&#127919;</div>' +
+      '<div style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">No weekly targets set</div>' +
+      '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'targets\')">Set targets</button>' +
+    '</div>') +
+
+    // Pipeline summary
+    '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);margin-bottom:16px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span style="font-size:16px;">&#128101;</span><span style="font-size:14px;font-weight:600;">Pipeline</span></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+        (contactsByStatus['lead'] ? '<span class="badge badge-purple">' + contactsByStatus['lead'] + ' leads</span>' : '') +
+        (contactsByStatus['contacted'] ? '<span class="badge badge-blue">' + contactsByStatus['contacted'] + ' contacted</span>' : '') +
+        (contactsByStatus['in-conversation'] ? '<span class="badge badge-yellow">' + contactsByStatus['in-conversation'] + ' in conv.</span>' : '') +
+        (contactsByStatus['interviewing'] ? '<span class="badge badge-green">' + contactsByStatus['interviewing'] + ' interviewing</span>' : '') +
+        (contactsByStatus['offer'] ? '<span class="badge badge-green">' + contactsByStatus['offer'] + ' offer</span>' : '') +
+        (Object.keys(contactsByStatus).length === 0 ? '<span style="color:var(--text-muted);font-size:12px;">No contacts yet</span>' : '') +
+      '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:10px;">' +
+        '<span style="font-size:11px;color:var(--text-muted);">' + dreamJobs + ' dream jobs, ' + goodJobs + ' good matches</span>' +
+      '</div>' +
+    '</div>' +
+
+    // Recent activity - compact
+    '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">&#128337;</span><span style="font-size:14px;font-weight:600;">Recent</span></div>' +
+        '<a style="font-size:12px;cursor:pointer;color:var(--primary);" onclick="navigateTo(\'activities\')">View all</a>' +
+      '</div>' +
+      (recentActivities.length === 0 ? '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">No activities yet</div>' :
+        recentActivities.slice(0,4).map(function(a) {
+          var dotColor = a.type === 'email' ? 'var(--primary)' : a.type === 'call' ? 'var(--success)' : a.type === 'meeting' ? 'var(--purple)' : a.type === 'application' ? 'var(--warning)' : 'var(--text-light)';
+          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light);">' +
+            '<div style="width:8px;height:8px;border-radius:50%;background:' + dotColor + ';flex-shrink:0;"></div>' +
+            '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(a.title) + '</div>' +
+            '<div style="font-size:11px;color:var(--text-muted);">' + formatDate(a.date) + '</div></div></div>';
+        }).join('')) +
+    '</div>';
+
+  } else {
+    // === DESKTOP DASHBOARD (unchanged) ===
+    return `
     <div class="page-header"><h2>Dashboard</h2><div style="font-size:13px;color:var(--text-light)">${formatDate(today())}</div></div>
 
     <div class="stats-row" style="grid-template-columns: repeat(5, 1fr);">
@@ -2277,6 +2389,7 @@ function renderDashboard() {
       }
     </div>
   `;
+  }
 }
 
 // ---- CONTACTS ----
@@ -5235,6 +5348,16 @@ function getWeekActuals(weekId) {
   const jobsReviewed = (DATA.savedJobs || []).filter(j => j.qualifiedAt && inWeek(j.qualifiedAt)).length;
 
   return { applications: apps, contacts: contactsReached, meetings, followups, jobsReviewed };
+}
+
+function renderMobileTargetRow(label, actual, target) {
+  if (!target) return '<div style="display:flex;align-items:center;gap:8px;opacity:0.4;"><span style="font-size:12px;width:70px;color:var(--text-muted);">' + label + '</span><div style="flex:1;height:4px;background:var(--border-light);border-radius:2px;"></div><span style="font-size:11px;color:var(--text-muted);">-</span></div>';
+  var pct = Math.min(100, Math.round((actual / target) * 100));
+  var col = pct >= 100 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--danger)';
+  return '<div style="display:flex;align-items:center;gap:8px;">' +
+    '<span style="font-size:12px;width:70px;color:var(--text-light);font-weight:500;">' + label + '</span>' +
+    '<div style="flex:1;height:4px;background:var(--border-light);border-radius:2px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + col + ';border-radius:2px;"></div></div>' +
+    '<span style="font-size:11px;font-weight:600;color:' + col + ';min-width:36px;text-align:right;">' + actual + '/' + target + '</span></div>';
 }
 
 function renderTargetBar(label, actual, target) {
