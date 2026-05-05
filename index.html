@@ -685,27 +685,158 @@
     z-index: 999;
   }
 
+  /* === BOTTOM TAB BAR (mobile only) === */
+  .bottom-tabs {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    z-index: 1001;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+  }
+  .bottom-tabs-inner {
+    display: flex;
+    height: 64px;
+    align-items: stretch;
+  }
+  .btab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+    padding: 6px 2px;
+    transition: color 0.15s;
+  }
+  .btab .btab-icon {
+    font-size: 22px;
+    line-height: 1;
+    transition: transform 0.15s;
+  }
+  .btab.active {
+    color: var(--primary);
+  }
+  .btab.active .btab-icon {
+    transform: scale(1.1);
+  }
+  .btab.active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 3px;
+    background: var(--primary);
+    border-radius: 0 0 3px 3px;
+  }
+  .btab:active { opacity: 0.7; }
+
+  /* Mobile sub-nav bar (appears below top header on some pages) */
+  .mobile-subnav {
+    display: none;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+    gap: 4px;
+    padding: 0 12px 10px;
+    margin: -4px -12px 12px;
+  }
+  .mobile-subnav::-webkit-scrollbar { display: none; }
+  .mobile-subnav .subnav-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-light);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .mobile-subnav .subnav-chip.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  .mobile-subnav .subnav-chip .chip-icon { font-size: 14px; }
+
+  /* Mobile page title with icon */
+  .mobile-page-title {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .mobile-page-title .mpt-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    background: var(--primary-light);
+    flex-shrink: 0;
+  }
+  .mobile-page-title h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .mobile-page-title .mpt-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
   @media (max-width: 768px) {
-    .hamburger { display: flex; }
+    /* Show bottom tabs, hide hamburger */
+    .bottom-tabs { display: block; }
+    .hamburger { display: none !important; }
 
     .sidebar {
       transform: translateX(-100%);
       transition: transform 0.25s ease;
-      z-index: 1000;
+      z-index: 1002;
     }
     .sidebar.open { transform: translateX(0); }
-    .sidebar-overlay.open { display: block; }
+    .sidebar-overlay.open { display: block; z-index: 1001; }
 
-    /* Main content */
+    /* Main content - add bottom padding for tab bar */
     .main {
       margin-left: 0 !important;
       padding: 16px !important;
-      padding-top: 64px !important;
+      padding-top: 16px !important;
+      padding-bottom: 80px !important;
       max-width: 100% !important;
       width: 100% !important;
     }
 
-    /* Page header */
+    /* Show mobile-specific elements */
+    .mobile-subnav { display: flex; }
+    .mobile-page-title { display: flex; }
+
+    /* Hide desktop page headers on mobile (replaced by mobile-page-title) */
     .page-header {
       flex-direction: column;
       align-items: flex-start;
@@ -714,11 +845,11 @@
     }
     .page-header h2 { font-size: 18px; }
 
-    /* Cards */
-    .card { padding: 14px !important; }
+    /* Cards - rounder, more shadow on mobile */
+    .card { padding: 14px !important; border-radius: 14px !important; }
 
     /* Buttons - bigger touch targets */
-    .btn { padding: 11px 16px; font-size: 14px; min-height: 44px; }
+    .btn { padding: 11px 16px; font-size: 14px; min-height: 44px; border-radius: 12px; }
     .btn-sm { padding: 9px 14px; font-size: 13px; min-height: 38px; }
 
     /* Modal - full screen on mobile */
@@ -756,9 +887,10 @@
     /* Forms */
     .form-row { flex-direction: column !important; gap: 0 !important; }
     .form-group input, .form-group select, .form-group textarea {
-      font-size: 16px !important; /* prevents iOS zoom */
+      font-size: 16px !important;
       padding: 12px !important;
       min-height: 44px;
+      border-radius: 10px !important;
     }
     .form-group label { font-size: 13px; margin-bottom: 6px; }
 
@@ -770,25 +902,25 @@
     .target-header { flex-direction: column; align-items: flex-start !important; gap: 8px; }
     .target-card { padding: 14px !important; }
 
-    /* Tables */
+    /* Tables - card-style on mobile */
     table { font-size: 12px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     th, td { padding: 10px 8px !important; white-space: nowrap; }
 
-    /* Filter tabs */
+    /* Filter tabs - pill style */
     .filter-tabs { flex-wrap: wrap; gap: 4px; }
-    .filter-tabs .tab { padding: 8px 12px; font-size: 13px; }
+    .filter-tabs .tab { padding: 8px 14px; font-size: 13px; border-radius: 20px; }
 
     /* Checkboxes and interactive items */
     .activity-check { padding: 10px 8px !important; min-height: 44px; }
     .activity-check input[type="checkbox"] { width: 20px; height: 20px; min-width: 20px; }
 
-    /* Sidebar touch targets */
+    /* Sidebar touch targets (still accessible via More tab) */
     .sidebar nav a { padding: 14px 16px; font-size: 15px; }
     .sidebar-bottom .sidebar-btn { padding: 10px 8px; font-size: 12px; min-height: 40px; }
     .sidebar-bottom .sidebar-btn-full { padding: 12px 10px; min-height: 44px; }
 
-    /* Toast */
-    .toast { bottom: 20px !important; left: 16px !important; right: 16px !important; max-width: none !important; }
+    /* Toast - above tab bar */
+    .toast { bottom: 80px !important; left: 16px !important; right: 16px !important; max-width: none !important; }
 
     /* Search inputs */
     input[type="text"], input[type="email"], input[type="url"], input[type="tel"],
@@ -797,17 +929,31 @@
     }
 
     /* Job cards layout */
-    .job-card { padding: 14px !important; }
+    .job-card { padding: 14px !important; border-radius: 14px !important; }
+
+    /* Quick-add on mobile */
+    .quick-add {
+      border-radius: 14px !important;
+    }
+    .quick-add input {
+      border-radius: 10px !important;
+    }
 
     /* Prevent horizontal overflow */
     body { overflow-x: hidden; }
+
+    /* Swipe card mobile tweaks */
+    .swipe-container { min-height: 360px; }
+    .swipe-card { padding: 18px; border-radius: 18px !important; }
+    .swipe-btn { width: 52px; height: 52px; font-size: 22px; }
   }
 
   @media (max-width: 480px) {
     .stats-row { grid-template-columns: 1fr !important; }
-    .main { padding: 10px !important; padding-top: 58px !important; }
+    .main { padding: 12px !important; padding-bottom: 80px !important; }
     .page-header h2 { font-size: 16px; }
     .modal { max-height: 95vh !important; }
+    .swipe-container { min-height: 320px; }
   }
 
 
@@ -904,6 +1050,35 @@
   .swipe-chip.selected { border-color: var(--primary); background: var(--primary-light); color: var(--primary); font-weight: 600; }
   .swipe-chip.selected-red { border-color: var(--danger); background: var(--danger-light); color: var(--danger); font-weight: 600; }
 
+  /* Mobile More menu items */
+  .mobile-more-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 14px 16px;
+    border: none;
+    background: none;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 12px;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s;
+    text-align: left;
+  }
+  .mobile-more-item:active { background: var(--bg); }
+  .mmi-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -952,6 +1127,73 @@
   <div class="main" id="mainContent"></div>
 </div>
 
+<!-- Bottom Tab Bar (mobile) -->
+<div class="bottom-tabs" id="bottomTabs">
+  <div class="bottom-tabs-inner">
+    <button class="btab active" data-tab="dashboard" onclick="switchTab('dashboard')">
+      <span class="btab-icon">&#9632;</span>
+      <span>Home</span>
+    </button>
+    <button class="btab" data-tab="jobs" onclick="switchTab('jobboard')">
+      <span class="btab-icon">&#128188;</span>
+      <span>Jobs</span>
+    </button>
+    <button class="btab" data-tab="pipeline" onclick="switchTab('contacts')">
+      <span class="btab-icon">&#128101;</span>
+      <span>Pipeline</span>
+    </button>
+    <button class="btab" data-tab="activity" onclick="switchTab('activities')">
+      <span class="btab-icon">&#9889;</span>
+      <span>Activity</span>
+    </button>
+    <button class="btab" data-tab="more" onclick="toggleMobileMore()">
+      <span class="btab-icon">&#8943;</span>
+      <span>More</span>
+    </button>
+  </div>
+</div>
+
+<!-- Mobile "More" menu overlay -->
+<div id="mobileMoreOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1100;" onclick="closeMobileMore()"></div>
+<div id="mobileMoreMenu" style="display:none;position:fixed;bottom:64px;left:0;right:0;background:var(--card);border-radius:16px 16px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,0.12);z-index:1101;padding:8px 0 calc(8px + env(safe-area-inset-bottom, 0px));max-height:60vh;overflow-y:auto;">
+  <div style="width:32px;height:4px;background:var(--border);border-radius:2px;margin:4px auto 12px;"></div>
+  <div style="padding:0 12px;">
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('inbox')">
+      <span class="mmi-icon" style="background:var(--primary-light);color:var(--primary);">&#128229;</span>
+      <span>Smart Inbox</span>
+    </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('dreamjob')">
+      <span class="mmi-icon" style="background:#fef3c7;color:#d97706;">&#127919;</span>
+      <span>Dream Job</span>
+    </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('generator')">
+      <span class="mmi-icon" style="background:var(--purple-light);color:var(--purple);">&#128221;</span>
+      <span>Doc Generator</span>
+    </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('applications')">
+      <span class="mmi-icon" style="background:var(--success-light);color:var(--success);">&#9998;</span>
+      <span>Applications</span>
+    </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('targets')">
+      <span class="mmi-icon" style="background:#fef3c7;color:#d97706;">&#9733;</span>
+      <span>Weekly Targets</span>
+    </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('headhunters')">
+      <span class="mmi-icon" style="background:var(--primary-light);color:var(--primary);">&#128270;</span>
+      <span>Headhunters</span>
+    </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();navigateTo('dialogues')">
+      <span class="mmi-icon" style="background:var(--success-light);color:var(--success);">&#9993;</span>
+      <span>Dialogues</span>
+    </button>
+    <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+    <button class="mobile-more-item" onclick="closeMobileMore();toggleSidebar()">
+      <span class="mmi-icon" style="background:var(--bg);color:var(--text-light);">&#9881;</span>
+      <span>Settings & Backup</span>
+    </button>
+  </div>
+</div>
+
 <!-- Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -983,6 +1225,76 @@ function checkForUpdates() {
 function toggleSidebar() {
   document.querySelector('.sidebar').classList.toggle('open');
   document.getElementById('sidebarOverlay').classList.toggle('open');
+}
+
+// === BOTTOM TAB BAR ===
+// Tab-to-page mapping
+var TAB_PAGES = {
+  dashboard: 'dashboard',
+  jobs: 'jobboard',
+  pipeline: 'contacts',
+  activity: 'activities',
+  more: null
+};
+// Which tab each page belongs to
+var PAGE_TO_TAB = {
+  dashboard: 'dashboard',
+  inbox: 'more',
+  contacts: 'pipeline',
+  companies: 'pipeline',
+  headhunters: 'more',
+  activities: 'activity',
+  dialogues: 'activity',
+  jobboard: 'jobs',
+  jobboard_list: 'jobs',
+  applications: 'more',
+  targets: 'activity',
+  dreamjob: 'more',
+  generator: 'more'
+};
+
+function switchTab(page) {
+  closeMobileMore();
+  navigateTo(page);
+}
+
+function navigateTo(page) {
+  currentPage = page;
+  updateNav();
+  updateBottomTabs();
+  render();
+  window.scrollTo(0, 0);
+}
+
+function updateBottomTabs() {
+  var tabs = document.querySelectorAll('.btab');
+  var activeTab = PAGE_TO_TAB[currentPage] || 'dashboard';
+  tabs.forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-tab') === activeTab);
+  });
+}
+
+function toggleMobileMore() {
+  var overlay = document.getElementById('mobileMoreOverlay');
+  var menu = document.getElementById('mobileMoreMenu');
+  var isOpen = menu.style.display === 'block';
+  if (isOpen) {
+    closeMobileMore();
+  } else {
+    overlay.style.display = 'block';
+    menu.style.display = 'block';
+    // Highlight More tab
+    document.querySelectorAll('.btab').forEach(function(t) {
+      t.classList.toggle('active', t.getAttribute('data-tab') === 'more');
+    });
+  }
+}
+
+function closeMobileMore() {
+  document.getElementById('mobileMoreOverlay').style.display = 'none';
+  document.getElementById('mobileMoreMenu').style.display = 'none';
+  // Restore correct tab highlight
+  updateBottomTabs();
 }
 
 // Close sidebar when nav link clicked on mobile
@@ -1719,6 +2031,8 @@ function updateNav() {
     if (a.dataset.page === 'jobboard' && currentPage === 'jobboard_list') isActive = true;
     a.classList.toggle('active', isActive);
   });
+  // Also update bottom tabs on mobile
+  if (typeof updateBottomTabs === 'function') updateBottomTabs();
 }
 
 // ---- TOAST ----
@@ -1765,6 +2079,41 @@ function render() {
     case 'generator': el.innerHTML = renderDocGenerator(); break;
   }
   bindEvents();
+  // Inject mobile sub-navigation if on mobile
+  if (window.innerWidth <= 768) injectMobileSubNav(el);
+}
+
+function injectMobileSubNav(container) {
+  // Define sub-nav configs for tabs with multiple pages
+  var subNavs = {
+    jobs: [
+      { page: 'jobboard', icon: '&#128179;', label: 'Swipe' },
+      { page: 'jobboard_list', icon: '&#128203;', label: 'List & Search' }
+    ],
+    pipeline: [
+      { page: 'contacts', icon: '&#128100;', label: 'Contacts' },
+      { page: 'companies', icon: '&#127970;', label: 'Companies' }
+    ],
+    activity: [
+      { page: 'activities', icon: '&#10003;', label: 'Tasks' },
+      { page: 'dialogues', icon: '&#128172;', label: 'Dialogues' },
+      { page: 'targets', icon: '&#9733;', label: 'Targets' }
+    ]
+  };
+
+  var activeTab = PAGE_TO_TAB[currentPage] || '';
+  var items = subNavs[activeTab];
+  if (!items || items.length < 2) return;
+
+  var navHtml = '<div class="mobile-subnav">';
+  items.forEach(function(item) {
+    var isActive = item.page === currentPage;
+    navHtml += '<button class="subnav-chip' + (isActive ? ' active' : '') + '" onclick="navigateTo(\'' + item.page + '\')">' +
+      '<span class="chip-icon">' + item.icon + '</span>' + item.label + '</button>';
+  });
+  navHtml += '</div>';
+
+  container.insertAdjacentHTML('afterbegin', navHtml);
 }
 
 // ---- DASHBOARD ----
