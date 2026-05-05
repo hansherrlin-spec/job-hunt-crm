@@ -2218,20 +2218,20 @@ function renderDashboard() {
       '</button>' +
     '</div>' +
 
-    // Stats grid - compact 2x3
+    // Stats grid - compact 2x2, all tappable
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">' +
-      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'jobboard\')">' +
         '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#128188;</span><div><div style="font-size:22px;font-weight:700;">' + savedJobs.length + '</div><div style="font-size:11px;color:var(--text-muted);">Jobs found</div></div></div>' +
         '<div style="font-size:10px;margin-top:6px;">' + unreviewedLabel + '</div>' +
       '</div>' +
-      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'contacts\')">' +
         '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#128100;</span><div><div style="font-size:22px;font-weight:700;">' + totalContacts + '</div><div style="font-size:11px;color:var(--text-muted);">Contacts</div></div></div>' +
         '<div style="font-size:10px;margin-top:6px;color:var(--text-muted);">' + totalCompanies + ' companies</div>' +
       '</div>' +
-      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'activities\')">' +
         '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#9889;</span><div><div style="font-size:22px;font-weight:700;">' + thisWeekActivities + '</div><div style="font-size:11px;color:var(--text-muted);">This week</div></div></div>' +
       '</div>' +
-      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);">' +
+      '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'applications\')">' +
         '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">&#9998;</span><div><div style="font-size:22px;font-weight:700;">' + activeApps + '</div><div style="font-size:11px;color:var(--text-muted);">Applications</div></div></div>' +
         '<div style="font-size:10px;margin-top:6px;color:var(--text-muted);">' + activeDialogues + ' active dialogues</div>' +
       '</div>' +
@@ -2269,8 +2269,8 @@ function renderDashboard() {
     '</div>') +
 
     // Pipeline summary
-    '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);margin-bottom:16px;">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span style="font-size:16px;">&#128101;</span><span style="font-size:14px;font-weight:600;">Pipeline</span></div>' +
+    '<div style="background:var(--card);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);margin-bottom:16px;cursor:pointer;-webkit-tap-highlight-color:transparent;" onclick="navigateTo(\'contacts\')">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span style="font-size:16px;">&#128101;</span><span style="font-size:14px;font-weight:600;">Pipeline</span><span style="margin-left:auto;font-size:14px;color:var(--text-muted);">&#8250;</span></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
         (contactsByStatus['lead'] ? '<span class="badge badge-purple">' + contactsByStatus['lead'] + ' leads</span>' : '') +
         (contactsByStatus['contacted'] ? '<span class="badge badge-blue">' + contactsByStatus['contacted'] + ' contacted</span>' : '') +
@@ -4228,22 +4228,44 @@ async function runMultiSourceSearch(terms, location, sources) {
     return true;
   });
 
-  // Score results
+  // Score results against dream job profile
   var dj = (DATA.dreamJob && DATA.dreamJob.dream) ? DATA.dreamJob.dream : {};
-  var djTitles = (dj.title || '').toLowerCase().split(',').map(function(t) { return t.trim(); });
-  var djIndustries = (dj.industries || '').toLowerCase().split(',').map(function(t) { return t.trim(); });
+  var djTitles = (dj.title || '').toLowerCase().split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+  var djIndustries = (dj.industries || '').toLowerCase().split(',').map(function(t) { return t.trim(); }).filter(Boolean);
 
   allResults.forEach(function(r) {
     var score = 0;
-    var roleL = (r.role + ' ' + (r.industry || '')).toLowerCase();
+    var roleL = (r.role || '').toLowerCase();
+    var roleAndIndustry = (roleL + ' ' + (r.industry || '')).toLowerCase();
     var descL = (r.description || '').toLowerCase();
+
+    // Title match (strongest signal)
     djTitles.forEach(function(t) { if (t && roleL.indexOf(t) >= 0) score += 30; });
-    djIndustries.forEach(function(ind) { if (ind && (roleL.indexOf(ind) >= 0 || descL.indexOf(ind) >= 0)) score += 15; });
+
+    // Industry match
+    djIndustries.forEach(function(ind) { if (ind && (roleAndIndustry.indexOf(ind) >= 0 || descL.indexOf(ind) >= 0)) score += 15; });
+
+    // Location match
     if ((r.location || '').toLowerCase().indexOf(location.toLowerCase()) >= 0) score += 10;
-    if (/director|head of|chief|vp |cco|coo|ceo/i.test(r.role)) score += 20;
-    if (/sales|commercial|revenue/i.test(roleL)) score += 10;
-    r._score = Math.min(score, 100);
+
+    // Seniority match - Hans is targeting senior/executive level
+    if (/\b(director|head of|chief|vp\b|vice president|cco|coo|ceo|vd |country manager|general manager|managing director)\b/i.test(roleL)) score += 25;
+    // Mid-senior is acceptable
+    if (/\b(manager|lead|ansvarig|chef)\b/i.test(roleL) && !/\bjunior|assistent|assistant|trainee|intern|praktik\b/i.test(roleL)) score += 10;
+
+    // Domain match - sales/commercial/operations
+    if (/\b(sales|commercial|revenue|business development|försäljning|kommersiell)\b/i.test(roleAndIndustry)) score += 10;
+
+    // Negative signals - junior/entry-level roles
+    if (/\b(junior|trainee|intern|praktik|sommar|summer|student|entry.level|assistent|assistant|receptionist|kassör|butik|lager|warehouse|städ|clean)\b/i.test(roleL)) score -= 40;
+    // Part-time/temp signals
+    if (/\b(deltid|part.time|tim.anställd|extra|vikariat|temp|seasonal|säsong)\b/i.test(roleL + ' ' + descL.substring(0, 200))) score -= 20;
+
+    r._score = Math.max(0, Math.min(100, score));
   });
+
+  // Filter out clearly irrelevant results (score 0 or below threshold)
+  allResults = allResults.filter(function(r) { return r._score >= 10; });
 
   allResults.sort(function(a, b) { return b._score - a._score; });
 
@@ -4317,15 +4339,25 @@ async function searchPlatsbanken(terms, location, existingUrls) {
   });
   // Deduplicate and limit
   queries = queries.filter(function(q, i) { return queries.indexOf(q) === i; }).slice(0, 15);
-  // Search each term both with and without location for broader coverage
+  // Build search queries strategically:
+  // - Specific English executive titles (CCO, COO, CEO, VP Sales) search nationwide - these are rare
+  // - Broader Swedish translations search locally only (to avoid flooding with junior roles nationwide)
+  var executiveTerms = ['CCO','COO','CEO','CRO','Chief','VP ','Vice President','Country Manager','Managing Director','General Manager','Head of'];
   var allQueries = [];
   queries.forEach(function(q) {
-    allQueries.push(q + ' ' + location); // e.g. "Försäljningschef Malmö"
-    allQueries.push(q + ' Skåne'); // broader regional
-    allQueries.push(q); // nationwide (will still match Malmö jobs)
+    var isExecutive = executiveTerms.some(function(et) { return q.toLowerCase().indexOf(et.toLowerCase()) >= 0; });
+    if (isExecutive) {
+      // Executive terms: search nationwide (they're rare enough)
+      allQueries.push(q);
+      allQueries.push(q + ' ' + location);
+    } else {
+      // Broader terms (Försäljningschef, etc): only search locally to avoid noise
+      allQueries.push(q + ' ' + location);
+      allQueries.push(q + ' Skåne');
+    }
   });
   // Deduplicate
-  allQueries = allQueries.filter(function(q, i) { return allQueries.indexOf(q) === i; }).slice(0, 30);
+  allQueries = allQueries.filter(function(q, i) { return allQueries.indexOf(q) === i; }).slice(0, 25);
   for (var qi = 0; qi < allQueries.length; qi++) {
     try {
       var apiUrl = 'https://jobsearch.api.jobtechdev.se/search?q=' + encodeURIComponent(allQueries[qi]) + '&limit=10&offset=0';
