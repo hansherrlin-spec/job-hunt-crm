@@ -3192,43 +3192,104 @@ function generateLinkedInMessage(contactId) {
 
   var company = contact.company ? DATA.companies.find(function(co) { return co.name === contact.company; }) : null;
 
-  // Build context for a personalized message
+  // Gather all context
   var firstName = (contact.name || '').split(' ')[0];
   var companyName = company ? company.name : (contact.company || '');
   var contactRole = contact.role || '';
   var industry = company ? (company.industry || '') : '';
   var whyInterested = company ? (company.whyInterested || '') : '';
   var companyNotes = company ? (company.notes || '') : '';
-  var financialSummary = company ? getFinancialSummary(company) : '';
+  var companySize = company ? (company.size || '') : '';
+  var companyFunding = company ? (company.funding || '') : '';
+  var companyFounded = company ? (company.founded || '') : '';
+  var fin = (company && company.financials && company.financials.length > 0) ? company.financials : [];
+  var latestFin = fin.length > 0 ? fin[fin.length - 1] : null;
+  var prevFin = fin.length > 1 ? fin[fin.length - 2] : null;
 
-  // Generate a tailored message
+  // --- Build the message in sections ---
   var msg = 'Hej ' + firstName + ',\n\n';
 
-  // Opening - why reaching out
-  if (contactRole && companyName) {
-    msg += 'Jag har tittat närmare på ' + companyName + ' och skulle gärna höra mer om hur ni ser på er tillväxtresa framåt.';
-  } else if (companyName) {
-    msg += 'Jag har följt ' + companyName + ' med stort intresse och skulle gärna byta några ord.';
-  } else {
-    msg += 'Jag hittade din profil och tänkte att det kunde vara värt att ta kontakt.';
+  // 1. COMPANY-SPECIFIC OPENING - why this company is interesting
+  // Try to build a specific observation about where the company is right now
+  var companyPhase = '';
+  if (latestFin && prevFin && latestFin.revenue && prevFin.revenue) {
+    var growth = Math.round((latestFin.revenue - prevFin.revenue) / prevFin.revenue * 100);
+    if (growth > 30) companyPhase = 'stark tillväxtfas';
+    else if (growth > 10) companyPhase = 'stabil tillväxt';
+    else if (growth > 0) companyPhase = 'mognadsfas';
+  }
+  if (!companyPhase && companySize) {
+    var sizeNum = parseInt((companySize || '0').replace(/\D/g, ''));
+    if (sizeNum > 0 && sizeNum <= 50) companyPhase = 'spännande skede som scaleup';
+    else if (sizeNum > 50 && sizeNum <= 200) companyPhase = 'intressant tillväxtfas';
+    else if (sizeNum > 200) companyPhase = 'expansionsfas';
   }
 
-  // Why this company interests Hans
-  if (whyInterested) {
-    msg += ' ' + whyInterested.split('.')[0].trim() + '.';
-  } else if (industry) {
-    msg += ' Jag tilltalas av det ni gör inom ' + industry.toLowerCase() + '.';
+  msg += 'Jag har följt ' + companyName + ' ett tag och tilltalas starkt av det ni bygger';
+  if (industry) msg += ' inom ' + industry.toLowerCase();
+  msg += '.';
+
+  // Add specific company insight if available
+  if (whyInterested && whyInterested.length > 10) {
+    // Use whyInterested but rewrite it as a proper sentence
+    msg += ' ' + whyInterested.charAt(0).toUpperCase() + whyInterested.slice(1);
+    if (!whyInterested.endsWith('.')) msg += '.';
+  }
+
+  // Add growth/phase context
+  if (companyPhase) {
+    msg += ' Ni verkar vara i en ' + companyPhase;
+    if (latestFin && latestFin.revenue) {
+      msg += ' med ' + latestFin.revenue + 'M i omsättning';
+    }
+    if (latestFin && latestFin.employees) {
+      msg += ' och ' + latestFin.employees + ' medarbetare';
+    }
+    msg += ' - precis den typ av bolag där jag tror jag kan bidra mest.';
   }
 
   msg += '\n\n';
 
-  // Hans's background - short and relevant
-  msg += 'Kort om mig: 17+ års erfarenhet inom kommersiella ledarroller, bland annat global sourcing på Maersk, försäljningsledning på Hilti (120M DKK) och senast ansvarig för att bygga upp sälj på EandoX/BIMobject.';
+  // 2. WHY HANS IS RELEVANT - tied to their likely commercial challenges
+  msg += 'Min bakgrund handlar i grunden om att bygga och skala kommersiella organisationer. ';
 
-  // What he's looking for
-  msg += ' Jag är öppen för både fast anställning och konsultuppdrag beroende på ert behov.\n\n';
+  // Pick the most relevant experience based on company context
+  var sizeNum2 = parseInt((companySize || '0').replace(/\D/g, ''));
+  var isSmallScaleup = sizeNum2 > 0 && sizeNum2 <= 100;
+  var isLarger = sizeNum2 > 100;
 
-  msg += 'Ha en fin dag och ser fram emot att höras!\n\nHans Herrlin';
+  if (isSmallScaleup) {
+    msg += 'Senast byggde jag upp hela säljorganisationen på EandoX/BIMobject - från pre-launch till 25+ signerade kunder med en go-to-market-strategi där 95% av lanserade features kom direkt från mina 100+ kundsamtal. ';
+    msg += 'Dessförinnan ledde jag en division med 30+ säljare och 120M DKK i budget på Hilti, och innan dess global sourcing på Maersk med projekt i $5-250M-spannet.';
+  } else if (isLarger) {
+    msg += 'Jag har lett en division med 30+ säljare och 120M DKK i budget på Hilti, byggt go-to-market från noll på EandoX/BIMobject, och hanterat global sourcing på Maersk med $5-250M-projekt. ';
+    msg += 'Jag kombinerar storbakgrunden med scaleup-mentaliteten.';
+  } else {
+    msg += 'Jag har byggt go-to-market från noll på EandoX/BIMobject (25+ kunder signerade), lett en division med 30+ säljare och 120M DKK på Hilti, och hanterat global sourcing på Maersk.';
+  }
+
+  msg += '\n\n';
+
+  // 3. THE ASK - specific to the contact's role
+  var isCSuite = /CEO|VD|founder|grundare|CRO|CCO|COO|CMO|CTO/i.test(contactRole);
+  var isSales = /sales|sälj|commercial|revenue|business dev/i.test(contactRole);
+  var isHR = /HR|people|talent|recruit/i.test(contactRole);
+
+  if (isCSuite) {
+    msg += 'Skulle vara värdefullt att byta erfarenheter kring hur ni tänker om kommersiell tillväxt framåt - oavsett om ni letar förstärkning eller bara vill sparra.';
+  } else if (isSales) {
+    msg += 'Jag ser att du jobbar med den kommersiella sidan och skulle gärna höra hur ni ser på tillväxtstrategin framåt.';
+  } else if (isHR) {
+    msg += 'Jag söker min nästa kommersiella ledarroll och skulle gärna höra om ni har behov inom sälj- eller affärsledning.';
+  } else {
+    msg += 'Jag är nyfiken på hur ni ser på den kommersiella sidan av verksamheten och om det finns möjlighet att bidra - antingen som anställd eller via ett konsultuppdrag.';
+  }
+
+  msg += ' Är öppen för båda uppläggen beroende på vad som passar er bäst.\n\n';
+
+  msg += 'Hade gärna tagit en förutsättningslös kaffe - fysisk eller digital - om du är öppen för det.\n\n';
+
+  msg += 'Ha en fin dag!\n\nHans Herrlin';
 
   // Show in modal with copy button and edit capability
   openModal('LinkedIn Message', '<div style="margin-bottom:12px;">' +
