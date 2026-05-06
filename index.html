@@ -3098,7 +3098,22 @@ function renderCompanyDetail(id) {
         <div><strong>Size:</strong> ${escHtml(c.size || '-')}</div>
         <div><strong>Status:</strong> ${escHtml(c.status || '-')}</div>
       </div>
-      ${c.evaluation ? '<div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:' + (c.evaluation === 'interested' ? 'var(--success-light)' : 'var(--danger-light)') + ';"><strong style="color:' + (c.evaluation === 'interested' ? 'var(--success)' : 'var(--danger)') + ';">' + (c.evaluation === 'interested' ? '&#10003; Interested' : '&#10007; Passed') + '</strong>' + (c.evaluationReason ? '<div style="font-size:13px;margin-top:4px;color:var(--text);">' + escHtml(c.evaluationReason) + '</div>' : '') + (c.evaluatedAt ? '<div style="font-size:11px;color:var(--text-light);margin-top:2px;">Evaluated: ' + escHtml(c.evaluatedAt) + '</div>' : '') + '<button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:11px;" onclick="resetCompanyEvaluation(\'' + c.id + '\')">Re-evaluate</button></div>' : ''}
+      ${c.evaluation ?
+        '<div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:' + (c.evaluation === 'interested' ? 'var(--success-light)' : 'var(--danger-light)') + ';">' +
+        '<strong style="color:' + (c.evaluation === 'interested' ? 'var(--success)' : 'var(--danger)') + ';">' + (c.evaluation === 'interested' ? '&#10003; Interested' : '&#10007; Passed') + '</strong>' +
+        (c.evaluationReason ? '<div style="font-size:13px;margin-top:4px;color:var(--text);">' + escHtml(c.evaluationReason) + '</div>' : '') +
+        (c.evaluatedAt ? '<div style="font-size:11px;color:var(--text-light);margin-top:2px;">Evaluated: ' + escHtml(c.evaluatedAt) + '</div>' : '') +
+        '<button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:11px;" onclick="resetCompanyEvaluation(\'' + c.id + '\')">' + 'Re-evaluate</button></div>'
+        :
+        '<div style="margin-top:14px;padding:14px;border-radius:8px;border:2px dashed var(--border);text-align:center;">' +
+        '<div style="font-size:13px;color:var(--text-light);margin-bottom:10px;">Evaluate this company</div>' +
+        '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:10px;">' +
+        '<button class="btn" style="background:var(--success);color:white;min-width:120px;" onclick="showDetailEval(\'' + c.id + '\',\'interested\')">&#10003; Interested</button>' +
+        '<button class="btn" style="background:var(--danger);color:white;min-width:120px;" onclick="showDetailEval(\'' + c.id + '\',\'pass\')">&#10007; Pass</button>' +
+        '</div>' +
+        '<div id="detailEvalPanel"></div>' +
+        '</div>'
+      }
       ${c.notes ? '<div style="margin-top:14px;"><strong>Notes:</strong><div class="notes-box" style="margin-top:6px;">'+escHtml(c.notes)+'</div></div>' : ''}
       ${c.whyInterested ? '<div style="margin-top:14px;"><strong>Why interested:</strong><div class="notes-box" style="margin-top:6px;">'+escHtml(c.whyInterested)+'</div></div>' : ''}
     </div>
@@ -3557,6 +3572,44 @@ function deleteCompany(id) {
   saveData(DATA);
   toast('Company deleted');
   if (currentDetail === id) currentDetail = null;
+  render();
+}
+
+function showDetailEval(companyId, decision) {
+  var panel = document.getElementById('detailEvalPanel');
+  if (!panel) return;
+  var isPositive = decision === 'interested';
+  var col = isPositive ? 'var(--success)' : 'var(--danger)';
+  var label = isPositive ? 'Interested' : 'Pass';
+  panel.innerHTML = '<div style="text-align:left;margin-top:8px;">' +
+    '<div style="font-size:13px;color:var(--text-light);margin-bottom:6px;">' + (isPositive ? 'Why are you interested?' : 'Why are you passing?') + '</div>' +
+    '<input id="detailEvalReason" type="text" placeholder="Your reason..." style="width:100%;padding:10px;font-size:14px;border:2px solid ' + col + ';border-radius:8px;box-sizing:border-box;font-family:inherit;outline:none;" autofocus onkeydown="if(event.key===\'Enter\')submitDetailEval(\'' + companyId + '\',\'' + decision + '\')">' +
+    '<div style="display:flex;gap:8px;margin-top:8px;">' +
+    '<button class="btn" style="flex:1;background:' + col + ';color:white;" onclick="submitDetailEval(\'' + companyId + '\',\'' + decision + '\')">' + label + '</button>' +
+    '<button class="btn btn-ghost" style="flex:1;" onclick="document.getElementById(\'detailEvalPanel\').innerHTML=\'\'">Cancel</button>' +
+    '</div></div>';
+  setTimeout(function() { var inp = document.getElementById('detailEvalReason'); if (inp) inp.focus(); }, 50);
+}
+
+function submitDetailEval(companyId, decision) {
+  var reason = (document.getElementById('detailEvalReason') || {}).value;
+  if (!reason || !reason.trim()) {
+    toast('Please provide a reason');
+    var inp = document.getElementById('detailEvalReason');
+    if (inp) { inp.style.borderColor = 'var(--danger)'; inp.focus(); }
+    return;
+  }
+  var c = DATA.companies.find(function(x) { return x.id === companyId; });
+  if (!c) return;
+  c.evaluation = decision;
+  c.evaluationReason = reason.trim();
+  c.evaluatedAt = today();
+  if (decision === 'pass') c.status = 'not-interested';
+  else if (decision === 'interested' && (!c.status || c.status === 'researching')) {
+    if (c.priority === 'low') c.priority = 'medium';
+  }
+  saveData(DATA);
+  toast(decision === 'interested' ? 'Interested: ' + c.name : 'Passed: ' + c.name);
   render();
 }
 
