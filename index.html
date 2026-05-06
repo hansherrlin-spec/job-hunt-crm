@@ -3233,80 +3233,44 @@ function generateLinkedInMessage(contactId) {
   var isListed = /listed|börs|nasdaq|spotlight|ngm/i.test(whyInterested + ' ' + companyNotes);
   var hasScaleAngle = /scale|growth|tillväxt|expand/i.test(whyInterested + ' ' + companyNotes);
 
-  msg += 'Jag har följt ' + companyName + ' ett tag';
-  if (industry) {
-    msg += ' och tilltalas av det ni bygger inom ' + industry.toLowerCase();
+  msg += 'Jag har följt ' + companyName + ' ett tag och tycker att ';
+  // Create a short, specific compliment about what the company does
+  if (industry && companyName) {
+    msg += 'det ni gör inom ' + industry.toLowerCase() + ' är spännande.';
+  } else {
+    msg += 'det ni bygger är spännande.';
   }
-  msg += '. ';
+  msg += ' ';
 
-  // Build a natural insight sentence from context - never raw notes
-  var insight = '';
+  // One natural sentence about why Hans finds the opportunity relevant - never raw notes
   if (hasGlobalAngle && hasProductAngle) {
-    insight = 'Att skala ett ' + (hasB2BAngle ? 'B2B-' : '') + 'erbjudande internationellt är en utmaning jag känner igen och brinner för';
+    msg += 'Att skala ett ' + (hasB2BAngle ? 'B2B-' : '') + 'erbjudande internationellt är en utmaning jag känner igen väl.';
   } else if (hasGlobalAngle) {
-    insight = 'Den internationella dimensionen i er verksamhet är något jag kan relatera till efter mina år med global sourcing';
-  } else if (hasScaleAngle || companyPhase) {
-    insight = 'Ni verkar vara i en fas där den kommersiella sidan blir allt viktigare';
+    msg += 'Den internationella dimensionen i er verksamhet är något jag kan relatera till.';
   } else if (hasProductAngle && hasB2BAngle) {
-    insight = 'Att ta en stark produkt till marknaden på rätt sätt är något jag jobbat med i flera roller';
+    msg += 'Att ta en stark produkt till marknaden på rätt sätt är något jag jobbat med i flera roller.';
+  } else if (hasScaleAngle || companyPhase) {
+    msg += 'Ni verkar vara i en fas där den kommersiella sidan blir allt viktigare.';
   } else if (isListed) {
-    insight = 'Kombinationen av er position på marknaden och potentialen framåt är det som fångar mitt intresse';
-  } else if (industry) {
-    insight = 'Er position inom ' + industry.toLowerCase() + ' och vart branschen är på väg gör er extra intressanta';
-  }
-
-  if (insight) {
-    msg += insight;
-    if (companyPhase && !/fas/.test(insight)) {
-      msg += ', särskilt i den ' + companyPhase + ' ni befinner er i';
-    }
-    msg += '.';
-  } else if (companyPhase) {
-    msg += 'Ni verkar vara i en ' + companyPhase + ' - precis den typ av bolag där jag tror jag kan bidra mest.';
+    msg += 'Er position på marknaden och potentialen framåt gör er extra intressanta.';
+  } else {
+    msg += 'Er position inom ' + (industry ? industry.toLowerCase() : 'branschen') + ' och vart ni är på väg gör er intressanta.';
   }
 
   msg += '\n\n';
 
-  // 2. WHY HANS IS RELEVANT - tied to their likely commercial challenges
-  msg += 'Min bakgrund handlar i grunden om att bygga och skala kommersiella organisationer. ';
-
-  // Pick the most relevant experience based on company context
-  var sizeNum2 = parseInt((companySize || '0').replace(/\D/g, ''));
-  var isSmallScaleup = sizeNum2 > 0 && sizeNum2 <= 100;
-  var isLarger = sizeNum2 > 100;
-
-  if (isSmallScaleup) {
-    msg += 'Senast byggde jag upp hela säljorganisationen på EandoX/BIMobject - från pre-launch till 25+ signerade kunder med en go-to-market-strategi där 95% av lanserade features kom direkt från mina 100+ kundsamtal. ';
-    msg += 'Dessförinnan ledde jag en division med 30+ säljare och 120M DKK i budget på Hilti, och innan dess global sourcing på Maersk med projekt i $5-250M-spannet.';
-  } else if (isLarger) {
-    msg += 'Jag har lett en division med 30+ säljare och 120M DKK i budget på Hilti, byggt go-to-market från noll på EandoX/BIMobject, och hanterat global sourcing på Maersk med $5-250M-projekt. ';
-    msg += 'Jag kombinerar storbakgrunden med scaleup-mentaliteten.';
-  } else {
-    msg += 'Jag har byggt go-to-market från noll på EandoX/BIMobject (25+ kunder signerade), lett en division med 30+ säljare och 120M DKK på Hilti, och hanterat global sourcing på Maersk.';
-  }
+  // 2. BACKGROUND - short, concrete, matched to context
+  msg += 'Min bakgrund har handlat om att skala kommersiella organisationer. ';
+  msg += 'Jag har dels haft en division med 30+ säljare och 120M DKK i budget på Hilti, byggt go-to-market från noll på EandoX (del av BIMobject), och hanterat global sourcing på Maersk med $5-250M-projekt.';
 
   msg += '\n\n';
 
-  // 3. THE ASK - specific to the contact's role
-  var isCSuite = /CEO|VD|founder|grundare|CRO|CCO|COO|CMO|CTO/i.test(contactRole);
-  var isSales = /sales|sälj|commercial|revenue|business dev/i.test(contactRole);
-  var isHR = /HR|people|talent|recruit/i.test(contactRole);
-
-  if (isCSuite) {
-    msg += 'Skulle vara värdefullt att byta erfarenheter kring hur ni tänker om kommersiell tillväxt framåt - oavsett om ni letar förstärkning eller bara vill sparra.';
-  } else if (isSales) {
-    msg += 'Jag ser att du jobbar med den kommersiella sidan och skulle gärna höra hur ni ser på tillväxtstrategin framåt.';
-  } else if (isHR) {
-    msg += 'Jag söker min nästa kommersiella ledarroll och skulle gärna höra om ni har behov inom sälj- eller affärsledning.';
-  } else {
-    msg += 'Jag är nyfiken på hur ni ser på den kommersiella sidan av verksamheten och om det finns möjlighet att bidra - antingen som anställd eller via ett konsultuppdrag.';
-  }
-
-  msg += ' Är öppen för båda uppläggen beroende på vad som passar er bäst.\n\n';
+  // 3. THE ASK - soft and open-ended
+  msg += 'Det hade varit intressant att utbyta erfarenheter kring hur ni tänker om kommersiell tillväxt framåt och om det finns några möjligheter till samarbete.\n\n';
 
   msg += 'Hade gärna tagit en förutsättningslös kaffe - fysisk eller digital - om du är öppen för det.\n\n';
 
-  msg += 'Ha en fin dag!\n\nHans Herrlin';
+  msg += 'Ha en fin dag!\n\nHans';
 
   // Show in modal with copy button and edit capability
   openModal('LinkedIn Message', '<div style="margin-bottom:12px;">' +
