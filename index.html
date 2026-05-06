@@ -1650,6 +1650,47 @@ function renderCompanySwipe() {
   html += '<div style="background:var(--bg);padding:8px 10px;border-radius:8px;"><span style="color:var(--text-light);">Contacts:</span> <strong>' + contactCount + '</strong></div>';
   html += '</div>';
 
+  // Financial summary (compact)
+  if (c.financials && c.financials.length > 0) {
+    var latestFin = c.financials[c.financials.length - 1];
+    html += '<div style="background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:12px;">';
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Financials (' + latestFin.year + ')</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    if (latestFin.revenue != null) {
+      html += '<div style="flex:1;min-width:70px;text-align:center;padding:4px 0;">';
+      html += '<div style="font-size:16px;font-weight:700;color:var(--primary);">' + latestFin.revenue + 'M</div>';
+      html += '<div style="font-size:10px;color:var(--text-muted);">Revenue</div></div>';
+    }
+    if (latestFin.ebitda != null) {
+      var ebitdaColor = latestFin.ebitda >= 0 ? 'var(--success)' : 'var(--danger)';
+      html += '<div style="flex:1;min-width:70px;text-align:center;padding:4px 0;">';
+      html += '<div style="font-size:16px;font-weight:700;color:' + ebitdaColor + ';">' + latestFin.ebitda + 'M</div>';
+      html += '<div style="font-size:10px;color:var(--text-muted);">EBITDA</div></div>';
+    }
+    if (latestFin.employees) {
+      html += '<div style="flex:1;min-width:70px;text-align:center;padding:4px 0;">';
+      html += '<div style="font-size:16px;font-weight:700;">' + latestFin.employees + '</div>';
+      html += '<div style="font-size:10px;color:var(--text-muted);">Employees</div></div>';
+    }
+    html += '</div>';
+    if (c.financials.length > 1) {
+      var prevFin = c.financials[c.financials.length - 2];
+      var trends = [];
+      if (latestFin.revenue != null && prevFin.revenue != null && prevFin.revenue > 0) {
+        var revGrowth = Math.round((latestFin.revenue - prevFin.revenue) / prevFin.revenue * 100);
+        trends.push('Rev ' + (revGrowth >= 0 ? '+' : '') + revGrowth + '%');
+      }
+      if (latestFin.employees && prevFin.employees && prevFin.employees > 0) {
+        var empGrowth = Math.round((latestFin.employees - prevFin.employees) / prevFin.employees * 100);
+        trends.push('Team ' + (empGrowth >= 0 ? '+' : '') + empGrowth + '%');
+      }
+      if (trends.length > 0) {
+        html += '<div style="font-size:11px;color:var(--text-light);text-align:center;margin-top:4px;">YoY: ' + trends.join(' | ') + '</div>';
+      }
+    }
+    html += '</div>';
+  }
+
   // Why interested (if set)
   if (c.whyInterested) {
     html += '<div style="font-size:12px;color:var(--text-light);margin-top:4px;background:var(--bg);padding:10px 12px;border-radius:8px;line-height:1.5;">';
@@ -2930,6 +2971,10 @@ function renderContactDetail(id) {
         <div><strong>Source:</strong> ${escHtml(c.source || '-')}</div>
       </div>
       ${c.notes ? '<div style="margin-top:14px;"><strong>Notes:</strong><div class="notes-box" style="margin-top:6px;">'+escHtml(c.notes)+'</div></div>' : ''}
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" style="background:var(--primary);color:white;font-size:13px;" onclick="generateLinkedInMessage('${c.id}')">&#128172; Write LinkedIn Message</button>
+        ${c.linkedin ? '<a href="'+escHtml(c.linkedin)+'" target="_blank" class="btn btn-ghost" style="font-size:13px;">&#128279; Open LinkedIn Profile</a>' : ''}
+      </div>
     </div>
     <div class="detail-section">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -3097,7 +3142,10 @@ function renderCompanyDetail(id) {
         <div><strong>Location:</strong> ${escHtml(c.location || '-')}</div>
         <div><strong>Size:</strong> ${escHtml(c.size || '-')}</div>
         <div><strong>Status:</strong> ${escHtml(c.status || '-')}</div>
+        ${c.founded ? '<div><strong>Founded:</strong> ' + escHtml(c.founded) + '</div>' : ''}
+        ${c.funding ? '<div><strong>Funding:</strong> ' + escHtml(c.funding) + '</div>' : ''}
       </div>
+      ${renderFinancialSection(c)}
       ${c.evaluation ?
         '<div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:' + (c.evaluation === 'interested' ? 'var(--success-light)' : 'var(--danger-light)') + ';">' +
         '<strong style="color:' + (c.evaluation === 'interested' ? 'var(--success)' : 'var(--danger)') + ';">' + (c.evaluation === 'interested' ? '&#10003; Interested' : '&#10007; Passed') + '</strong>' +
@@ -3121,13 +3169,103 @@ function renderCompanyDetail(id) {
       <h4>Contacts at ${escHtml(c.name)}</h4>
       ${contacts.length === 0 ? '<div style="color:var(--text-light);font-size:13px;padding:12px 0;">No contacts linked</div>' :
         contacts.map(ct => `
-          <div class="card" style="cursor:pointer;padding:12px 16px;" onclick="currentPage='contacts';currentDetail='${ct.id}';updateNav();render();">
-            <div style="display:flex;justify-content:space-between;"><strong style="font-size:13px;">${escHtml(ct.name)}</strong><span class="badge ${statusBadge(ct.status)}">${escHtml(ct.status)}</span></div>
-            <div style="font-size:12px;color:var(--text-light);margin-top:2px;">${escHtml(ct.role || '')}</div>
+          <div class="card" style="padding:12px 16px;">
+            <div style="display:flex;justify-content:space-between;cursor:pointer;" onclick="currentPage='contacts';currentDetail='${ct.id}';updateNav();render();">
+              <div><strong style="font-size:13px;">${escHtml(ct.name)}</strong>
+              <div style="font-size:12px;color:var(--text-light);margin-top:2px;">${escHtml(ct.role || '')}</div></div>
+              <span class="badge ${statusBadge(ct.status)}">${escHtml(ct.status)}</span>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:6px;">
+              <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="event.stopPropagation();generateLinkedInMessage('${ct.id}')">&#128172; LinkedIn msg</button>
+              ${ct.linkedin ? '<a href="'+escHtml(ct.linkedin)+'" target="_blank" class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="event.stopPropagation()">&#128279; Profile</a>' : ''}
+            </div>
           </div>
         `).join('')}
     </div>
   `;
+}
+
+// ---- LINKEDIN MESSAGE GENERATOR ----
+function generateLinkedInMessage(contactId) {
+  var contact = DATA.contacts.find(function(c) { return c.id === contactId; });
+  if (!contact) { toast('Contact not found'); return; }
+
+  var company = contact.company ? DATA.companies.find(function(co) { return co.name === contact.company; }) : null;
+
+  // Build context for a personalized message
+  var firstName = (contact.name || '').split(' ')[0];
+  var companyName = company ? company.name : (contact.company || '');
+  var contactRole = contact.role || '';
+  var industry = company ? (company.industry || '') : '';
+  var whyInterested = company ? (company.whyInterested || '') : '';
+  var companyNotes = company ? (company.notes || '') : '';
+  var financialSummary = company ? getFinancialSummary(company) : '';
+
+  // Generate a tailored message
+  var msg = 'Hej ' + firstName + ',\n\n';
+
+  // Opening - why reaching out
+  if (contactRole && companyName) {
+    msg += 'Jag har tittat närmare på ' + companyName + ' och skulle gärna höra mer om hur ni ser på er tillväxtresa framåt.';
+  } else if (companyName) {
+    msg += 'Jag har följt ' + companyName + ' med stort intresse och skulle gärna byta några ord.';
+  } else {
+    msg += 'Jag hittade din profil och tänkte att det kunde vara värt att ta kontakt.';
+  }
+
+  // Why this company interests Hans
+  if (whyInterested) {
+    msg += ' ' + whyInterested.split('.')[0].trim() + '.';
+  } else if (industry) {
+    msg += ' Jag tilltalas av det ni gör inom ' + industry.toLowerCase() + '.';
+  }
+
+  msg += '\n\n';
+
+  // Hans's background - short and relevant
+  msg += 'Kort om mig: 17+ års erfarenhet inom kommersiella ledarroller, bland annat global sourcing på Maersk, försäljningsledning på Hilti (120M DKK) och senast ansvarig för att bygga upp sälj på EandoX/BIMobject.';
+
+  // What he's looking for
+  msg += ' Jag är öppen för både fast anställning och konsultuppdrag beroende på ert behov.\n\n';
+
+  msg += 'Ha en fin dag och ser fram emot att höras!\n\nHans Herrlin';
+
+  // Show in modal with copy button and edit capability
+  openModal('LinkedIn Message', '<div style="margin-bottom:12px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
+    '<div style="width:36px;height:36px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:18px;">&#128172;</div>' +
+    '<div><div style="font-weight:700;">Message to ' + escHtml(contact.name) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);">' + escHtml(companyName) + '</div></div></div>' +
+    '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Edit the message below, then copy it to your clipboard.</div>' +
+    '<textarea id="liMsgText" style="width:100%;min-height:220px;padding:14px;font-size:14px;line-height:1.6;border:1px solid var(--border);border-radius:10px;box-sizing:border-box;font-family:inherit;resize:vertical;background:var(--bg);">' + escHtml(msg) + '</textarea>' +
+    '</div>',
+    '<div style="display:flex;gap:8px;align-items:center;">' +
+    '<div style="flex:1;font-size:11px;color:var(--text-muted);" id="liMsgStatus"></div>' +
+    '<button class="btn btn-ghost" onclick="closeModal()">Close</button>' +
+    '<button class="btn btn-primary" onclick="copyLinkedInMessage()" style="min-width:120px;">&#128203; Copy Message</button>' +
+    '</div>'
+  );
+}
+
+function copyLinkedInMessage() {
+  var textarea = document.getElementById('liMsgText');
+  if (!textarea) return;
+  var text = textarea.value;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() {
+      var status = document.getElementById('liMsgStatus');
+      if (status) status.innerHTML = '<span style="color:var(--success);font-weight:600;">Copied to clipboard!</span>';
+      toast('Message copied!');
+    }).catch(function() {
+      textarea.select();
+      document.execCommand('copy');
+      toast('Message copied!');
+    });
+  } else {
+    textarea.select();
+    document.execCommand('copy');
+    toast('Message copied!');
+  }
 }
 
 // ---- HEADHUNTERS ----
@@ -3522,9 +3660,56 @@ function companyFormHtml(c) {
       <div class="form-group"><label>Location</label><input id="f_location" value="${escHtml(c.location || '')}"></div>
     </div>
     <div class="form-group"><label>Company Size</label><input id="f_size" placeholder="e.g. 50-200, Startup, Enterprise" value="${escHtml(c.size || '')}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Founded</label><input id="f_founded" type="number" placeholder="e.g. 2018" value="${escHtml(c.founded || '')}"></div>
+      <div class="form-group"><label>Funding (MSEK)</label><input id="f_funding" placeholder="e.g. 25, Series B" value="${escHtml(c.funding || '')}"></div>
+    </div>
+    <div style="margin-top:8px;margin-bottom:8px;">
+      <label style="font-weight:600;font-size:13px;display:block;margin-bottom:6px;">Financial Data (per year)</label>
+      <div id="f_financials_rows"></div>
+      <button type="button" class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addFinancialRow()">+ Add year</button>
+    </div>
     <div class="form-group"><label>Why are you interested?</label><textarea id="f_why">${escHtml(c.whyInterested || '')}</textarea></div>
     <div class="form-group"><label>Notes</label><textarea id="f_cnotes">${escHtml(c.notes || '')}</textarea></div>
   `;
+}
+
+var _editFinancials = [];
+
+function addFinancialRow(year, revenue, ebitda, employees) {
+  var container = document.getElementById('f_financials_rows');
+  if (!container) return;
+  var idx = container.children.length;
+  var y = year || new Date().getFullYear();
+  var div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:70px 1fr 1fr 1fr 28px;gap:6px;margin-bottom:4px;align-items:center;';
+  div.innerHTML = '<input type="number" class="fin-year" value="' + (year || '') + '" placeholder="Year" style="padding:6px;font-size:12px;border:1px solid var(--border);border-radius:6px;">' +
+    '<input type="number" class="fin-revenue" value="' + (revenue || '') + '" placeholder="Rev (MSEK)" style="padding:6px;font-size:12px;border:1px solid var(--border);border-radius:6px;">' +
+    '<input type="number" class="fin-ebitda" value="' + (ebitda || '') + '" placeholder="EBITDA (MSEK)" style="padding:6px;font-size:12px;border:1px solid var(--border);border-radius:6px;">' +
+    '<input type="number" class="fin-employees" value="' + (employees || '') + '" placeholder="Employees" style="padding:6px;font-size:12px;border:1px solid var(--border);border-radius:6px;">' +
+    '<button type="button" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:0;" onclick="this.parentElement.remove()">&#10007;</button>';
+  container.appendChild(div);
+}
+
+function collectFinancials() {
+  var rows = document.querySelectorAll('#f_financials_rows > div');
+  var data = [];
+  rows.forEach(function(row) {
+    var year = row.querySelector('.fin-year');
+    var rev = row.querySelector('.fin-revenue');
+    var ebitda = row.querySelector('.fin-ebitda');
+    var emp = row.querySelector('.fin-employees');
+    var y = year ? parseInt(year.value) : 0;
+    if (!y) return;
+    data.push({
+      year: y,
+      revenue: rev && rev.value ? parseFloat(rev.value) : null,
+      ebitda: ebitda && ebitda.value ? parseFloat(ebitda.value) : null,
+      employees: emp && emp.value ? parseInt(emp.value) : null
+    });
+  });
+  data.sort(function(a, b) { return a.year - b.year; });
+  return data;
 }
 
 function openCompanyForm(id) {
@@ -3533,12 +3718,17 @@ function openCompanyForm(id) {
     <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
     <button class="btn btn-primary" onclick="saveCompany('${id || ''}')">${c ? 'Save' : 'Add Company'}</button>
   `);
+  // Populate financial rows
+  if (c && c.financials && c.financials.length > 0) {
+    c.financials.forEach(function(f) { addFinancialRow(f.year, f.revenue, f.ebitda, f.employees); });
+  }
 }
 
 function saveCompany(id) {
   const name = document.getElementById('f_cname').value.trim();
   if (!name) { toast('Company name is required'); return; }
 
+  var existing = id ? DATA.companies.find(x => x.id === id) : null;
   const obj = {
     id: id || genId(),
     name,
@@ -3548,11 +3738,20 @@ function saveCompany(id) {
     website: document.getElementById('f_website').value.trim(),
     location: document.getElementById('f_location').value.trim(),
     size: document.getElementById('f_size').value.trim(),
+    founded: document.getElementById('f_founded') ? document.getElementById('f_founded').value.trim() : (existing ? existing.founded : ''),
+    funding: document.getElementById('f_funding') ? document.getElementById('f_funding').value.trim() : (existing ? existing.funding : ''),
+    financials: collectFinancials(),
     whyInterested: document.getElementById('f_why').value.trim(),
     notes: document.getElementById('f_cnotes').value.trim(),
-    createdAt: id ? (DATA.companies.find(x => x.id === id) || {}).createdAt : today(),
+    createdAt: existing ? existing.createdAt : today(),
     updatedAt: today()
   };
+  // Preserve evaluation data
+  if (existing) {
+    if (existing.evaluation) obj.evaluation = existing.evaluation;
+    if (existing.evaluationReason) obj.evaluationReason = existing.evaluationReason;
+    if (existing.evaluatedAt) obj.evaluatedAt = existing.evaluatedAt;
+  }
 
   if (id) {
     const idx = DATA.companies.findIndex(x => x.id === id);
@@ -3573,6 +3772,165 @@ function deleteCompany(id) {
   toast('Company deleted');
   if (currentDetail === id) currentDetail = null;
   render();
+}
+
+function renderFinancialSection(c) {
+  var fin = c.financials;
+  if (!fin || fin.length === 0) return '';
+
+  var html = '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">';
+  html += '<strong style="font-size:14px;">Financial Overview</strong>';
+
+  // Key metrics from latest year
+  var latest = fin[fin.length - 1];
+  var prev = fin.length > 1 ? fin[fin.length - 2] : null;
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px;">';
+
+  if (latest.revenue != null) {
+    var revGrowth = prev && prev.revenue ? Math.round(((latest.revenue - prev.revenue) / prev.revenue) * 100) : null;
+    html += '<div style="background:var(--bg);padding:10px 12px;border-radius:8px;"><div style="font-size:11px;color:var(--text-light);">Revenue</div>';
+    html += '<div style="font-size:18px;font-weight:700;">' + latest.revenue + ' <span style="font-size:11px;font-weight:400;">MSEK</span></div>';
+    if (revGrowth !== null) html += '<div style="font-size:11px;color:' + (revGrowth >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + (revGrowth >= 0 ? '+' : '') + revGrowth + '% YoY</div>';
+    html += '</div>';
+  }
+  if (latest.ebitda != null) {
+    var margin = latest.revenue ? Math.round((latest.ebitda / latest.revenue) * 100) : null;
+    html += '<div style="background:var(--bg);padding:10px 12px;border-radius:8px;"><div style="font-size:11px;color:var(--text-light);">EBITDA</div>';
+    html += '<div style="font-size:18px;font-weight:700;">' + latest.ebitda + ' <span style="font-size:11px;font-weight:400;">MSEK</span></div>';
+    if (margin !== null) html += '<div style="font-size:11px;color:' + (latest.ebitda >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + margin + '% margin</div>';
+    html += '</div>';
+  }
+  if (latest.employees != null) {
+    var empGrowth = prev && prev.employees ? Math.round(((latest.employees - prev.employees) / prev.employees) * 100) : null;
+    html += '<div style="background:var(--bg);padding:10px 12px;border-radius:8px;"><div style="font-size:11px;color:var(--text-light);">Employees</div>';
+    html += '<div style="font-size:18px;font-weight:700;">' + latest.employees + '</div>';
+    if (empGrowth !== null) html += '<div style="font-size:11px;color:' + (empGrowth >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + (empGrowth >= 0 ? '+' : '') + empGrowth + '% YoY</div>';
+    html += '</div>';
+  }
+  // Revenue per employee
+  if (latest.revenue != null && latest.employees) {
+    var revPerEmp = Math.round(latest.revenue / latest.employees * 10) / 10;
+    html += '<div style="background:var(--bg);padding:10px 12px;border-radius:8px;"><div style="font-size:11px;color:var(--text-light);">Rev/Employee</div>';
+    html += '<div style="font-size:18px;font-weight:700;">' + revPerEmp + ' <span style="font-size:11px;font-weight:400;">MSEK</span></div></div>';
+  }
+  html += '</div>';
+
+  // Chart (only if 2+ data points)
+  if (fin.length >= 2) {
+    html += renderFinancialChart(fin);
+  }
+
+  // Data table
+  html += '<div style="margin-top:12px;overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
+  html += '<thead><tr style="border-bottom:2px solid var(--border);">';
+  html += '<th style="text-align:left;padding:6px 8px;color:var(--text-light);">Year</th>';
+  html += '<th style="text-align:right;padding:6px 8px;color:var(--text-light);">Revenue</th>';
+  html += '<th style="text-align:right;padding:6px 8px;color:var(--text-light);">EBITDA</th>';
+  html += '<th style="text-align:right;padding:6px 8px;color:var(--text-light);">Margin</th>';
+  html += '<th style="text-align:right;padding:6px 8px;color:var(--text-light);">Empl.</th>';
+  html += '</tr></thead><tbody>';
+  fin.forEach(function(f) {
+    var margin = f.revenue && f.ebitda != null ? Math.round((f.ebitda / f.revenue) * 100) + '%' : '-';
+    html += '<tr style="border-bottom:1px solid var(--border-light);">';
+    html += '<td style="padding:6px 8px;font-weight:600;">' + f.year + '</td>';
+    html += '<td style="text-align:right;padding:6px 8px;">' + (f.revenue != null ? f.revenue + ' MSEK' : '-') + '</td>';
+    html += '<td style="text-align:right;padding:6px 8px;color:' + (f.ebitda != null && f.ebitda < 0 ? 'var(--danger)' : 'var(--text)') + ';">' + (f.ebitda != null ? f.ebitda + ' MSEK' : '-') + '</td>';
+    html += '<td style="text-align:right;padding:6px 8px;">' + margin + '</td>';
+    html += '<td style="text-align:right;padding:6px 8px;">' + (f.employees || '-') + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderFinancialChart(fin) {
+  var w = 380, h = 160, pad = 40, padR = 20, padTop = 10, padBot = 25;
+  var chartW = w - pad - padR;
+  var chartH = h - padTop - padBot;
+
+  // Get data arrays
+  var years = fin.map(function(f) { return f.year; });
+  var revs = fin.map(function(f) { return f.revenue; });
+  var ebits = fin.map(function(f) { return f.ebitda; });
+  var hasRev = revs.some(function(v) { return v != null; });
+  var hasEbitda = ebits.some(function(v) { return v != null; });
+  if (!hasRev && !hasEbitda) return '';
+
+  // Calculate scale
+  var allVals = [];
+  revs.forEach(function(v) { if (v != null) allVals.push(v); });
+  ebits.forEach(function(v) { if (v != null) allVals.push(v); });
+  var maxVal = Math.max.apply(null, allVals);
+  var minVal = Math.min.apply(null, allVals);
+  if (minVal > 0) minVal = 0;
+  var range = maxVal - minVal || 1;
+
+  function xPos(i) { return pad + (i / (years.length - 1)) * chartW; }
+  function yPos(v) { return padTop + chartH - ((v - minVal) / range) * chartH; }
+
+  var svg = '<div style="margin-top:12px;overflow-x:auto;">';
+  svg += '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;max-width:' + w + 'px;height:auto;" xmlns="http://www.w3.org/2000/svg">';
+
+  // Zero line
+  if (minVal < 0) {
+    var zeroY = yPos(0);
+    svg += '<line x1="' + pad + '" y1="' + zeroY + '" x2="' + (w - padR) + '" y2="' + zeroY + '" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="4,3"/>';
+  }
+
+  // X axis labels (years)
+  years.forEach(function(yr, i) {
+    var x = xPos(i);
+    svg += '<text x="' + x + '" y="' + (h - 4) + '" text-anchor="middle" fill="#6b7280" font-size="10" font-family="Inter,sans-serif">' + yr + '</text>';
+  });
+
+  // Revenue bars
+  if (hasRev) {
+    var barW = Math.min(28, chartW / years.length * 0.6);
+    revs.forEach(function(v, i) {
+      if (v == null) return;
+      var x = xPos(i) - barW / 2;
+      var barH = Math.abs(v - 0) / range * chartH;
+      var y = v >= 0 ? yPos(v) : yPos(0);
+      svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + Math.max(1, barH) + '" rx="3" fill="#6366f1" opacity="0.3"/>';
+      svg += '<text x="' + xPos(i) + '" y="' + (y - 4) + '" text-anchor="middle" fill="#6366f1" font-size="9" font-family="Inter,sans-serif" font-weight="600">' + v + '</text>';
+    });
+  }
+
+  // EBITDA line
+  if (hasEbitda) {
+    var points = [];
+    ebits.forEach(function(v, i) { if (v != null) points.push({ x: xPos(i), y: yPos(v), v: v }); });
+    if (points.length >= 2) {
+      var pathD = points.map(function(p, i) { return (i === 0 ? 'M' : 'L') + p.x + ',' + p.y; }).join(' ');
+      svg += '<path d="' + pathD + '" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+    }
+    points.forEach(function(p) {
+      svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3.5" fill="#10b981"/>';
+      svg += '<text x="' + p.x + '" y="' + (p.y - 7) + '" text-anchor="middle" fill="#10b981" font-size="9" font-family="Inter,sans-serif" font-weight="600">' + p.v + '</text>';
+    });
+  }
+
+  // Legend
+  svg += '<rect x="' + pad + '" y="0" width="8" height="8" rx="2" fill="#6366f1" opacity="0.4"/>';
+  svg += '<text x="' + (pad + 11) + '" y="7.5" fill="#6b7280" font-size="9" font-family="Inter,sans-serif">Revenue</text>';
+  if (hasEbitda) {
+    svg += '<line x1="' + (pad + 58) + '" y1="4" x2="' + (pad + 68) + '" y2="4" stroke="#10b981" stroke-width="2.5"/>';
+    svg += '<text x="' + (pad + 71) + '" y="7.5" fill="#6b7280" font-size="9" font-family="Inter,sans-serif">EBITDA</text>';
+  }
+
+  svg += '</svg></div>';
+  return svg;
+}
+
+function getFinancialSummary(c) {
+  if (!c.financials || c.financials.length === 0) return '';
+  var latest = c.financials[c.financials.length - 1];
+  var parts = [];
+  if (latest.revenue != null) parts.push(latest.revenue + 'M');
+  if (latest.ebitda != null) parts.push('EBITDA ' + latest.ebitda + 'M');
+  if (latest.employees) parts.push(latest.employees + ' emp');
+  return parts.length > 0 ? latest.year + ': ' + parts.join(' / ') : '';
 }
 
 function showDetailEval(companyId, decision) {
