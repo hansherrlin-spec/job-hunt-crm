@@ -832,6 +832,38 @@
       width: 100% !important;
     }
 
+    /* Pull-to-refresh indicator */
+    .ptr-indicator {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      z-index: 9999;
+      overflow: hidden;
+      transition: height 0.2s ease;
+      font-size: 13px;
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .ptr-indicator .ptr-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      margin-right: 8px;
+      transition: transform 0.1s linear;
+    }
+    .ptr-indicator.refreshing .ptr-spinner {
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* Show mobile-specific elements */
     .mobile-subnav { display: flex; }
     .mobile-page-title { display: flex; }
@@ -1079,9 +1111,64 @@
     font-size: 18px;
     flex-shrink: 0;
   }
+
+  /* Login screen */
+  .login-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  .login-card {
+    background: var(--card);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    padding: 48px 40px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+  }
+  .login-card h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+  .login-card p {
+    color: var(--text-light);
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .login-error {
+    color: var(--danger);
+    font-size: 13px;
+    margin-top: 16px;
+    display: none;
+  }
+  .login-card .login-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+  }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
+
+<!-- Login Screen -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <span class="login-icon">&#128274;</span>
+    <h1>Job Hunt CRM</h1>
+    <p>Sign in with your Google account to continue.</p>
+    <div id="googleSignInBtn" style="display:inline-flex;justify-content:center;"></div>
+    <div class="login-error" id="loginError">Access denied. This app is restricted to authorized users only.</div>
+  </div>
+</div>
+
 <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 <div class="app">
@@ -1119,11 +1206,13 @@
         <button onclick="exportData()" class="sidebar-btn">Export</button>
         <button onclick="document.getElementById('importFile').click()" class="sidebar-btn">Import</button>
         <button onclick="checkForUpdates()" class="sidebar-btn sidebar-btn-full" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-weight:400;font-size:10px;">&#128260; Check for updates</button>
+        <button onclick="logoutUser()" class="sidebar-btn sidebar-btn-full" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.2);color:#fca5a5;font-weight:400;font-size:10px;margin-top:4px;">Sign out</button>
       </div>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
     </div>
   </div>
 
+  <div class="ptr-indicator" id="ptrIndicator"><div class="ptr-spinner"></div><span class="ptr-text">Pull to refresh</span></div>
   <div class="main" id="mainContent"></div>
 </div>
 
@@ -1191,6 +1280,10 @@
       <span class="mmi-icon" style="background:var(--bg);color:var(--text-light);">&#9881;</span>
       <span>Settings & Backup</span>
     </button>
+    <button class="mobile-more-item" onclick="closeMobileMore();logoutUser()">
+      <span class="mmi-icon" style="background:var(--danger-light);color:var(--danger);">&#128682;</span>
+      <span>Sign out</span>
+    </button>
   </div>
 </div>
 
@@ -1207,6 +1300,137 @@
 </div>
 
 <script>
+// ---- GOOGLE AUTH ----
+// IMPORTANT: Replace this placeholder with your actual Google OAuth Client ID
+// See instructions at the bottom of this file or in the setup guide.
+var GOOGLE_CLIENT_ID = '383629995032-39e5qinm75jdtulhq049vnm6aegah25j.apps.googleusercontent.com';
+var ALLOWED_EMAIL = 'hans.herrlin@gmail.com';
+var AUTH_STORAGE_KEY = 'crm_auth_session';
+var AUTH_EXPIRY_DAYS = 30;
+
+function isAuthenticated() {
+  try {
+    var session = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY));
+    if (!session || session.email !== ALLOWED_EMAIL) return false;
+    var expiry = new Date(session.expiresAt);
+    if (expiry < new Date()) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return false;
+    }
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.querySelector('.app').style.display = 'flex';
+  var bottomTabs = document.getElementById('bottomTabs');
+  if (bottomTabs) bottomTabs.style.display = '';
+  var hamburger = document.querySelector('.hamburger');
+  if (hamburger) hamburger.style.display = '';
+  // Trigger app render if DATA is loaded
+  if (typeof render === 'function' && typeof DATA !== 'undefined') {
+    render();
+    if (typeof loadDataWithCloud === 'function') loadDataWithCloud();
+  }
+}
+
+function showLogin() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.querySelector('.app').style.display = 'none';
+  var bottomTabs = document.getElementById('bottomTabs');
+  if (bottomTabs) bottomTabs.style.display = 'none';
+  var hamburger = document.querySelector('.hamburger');
+  if (hamburger) hamburger.style.display = 'none';
+  document.getElementById('loginError').style.display = 'none';
+  initGoogleSignIn();
+}
+
+function handleCredentialResponse(response) {
+  // Decode the JWT token (ID token) to get email
+  var payload = JSON.parse(atob(response.credential.split('.')[1]));
+  var email = payload.email;
+
+  if (email === ALLOWED_EMAIL) {
+    // Store auth session
+    var expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + AUTH_EXPIRY_DAYS);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+      email: email,
+      name: payload.name || '',
+      picture: payload.picture || '',
+      authenticatedAt: new Date().toISOString(),
+      expiresAt: expiresAt.toISOString()
+    }));
+    showApp();
+  } else {
+    // Access denied
+    document.getElementById('loginError').style.display = 'block';
+    // Revoke the token so user can try a different account
+    if (google && google.accounts && google.accounts.id) {
+      google.accounts.id.revoke(email);
+    }
+  }
+}
+
+function initGoogleSignIn() {
+  if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
+    // Show helpful message if client ID not configured
+    var btn = document.getElementById('googleSignInBtn');
+    if (btn) {
+      btn.innerHTML = '<div style="background:var(--warning-light);color:#92400e;padding:12px 16px;border-radius:8px;font-size:12px;text-align:left;max-width:320px;">' +
+        '<strong>Setup required</strong><br>Google OAuth Client ID not configured yet. ' +
+        'See the setup instructions to create one in Google Cloud Console.</div>';
+    }
+    return;
+  }
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleCredentialResponse,
+      auto_select: false
+    });
+    google.accounts.id.renderButton(
+      document.getElementById('googleSignInBtn'),
+      { theme: 'outline', size: 'large', width: 280, text: 'signin_with', shape: 'pill' }
+    );
+  } else {
+    // GSI library not loaded yet, retry after short delay
+    setTimeout(initGoogleSignIn, 200);
+  }
+}
+
+function logoutUser() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+  showLogin();
+}
+
+// On page load: check auth state
+(function() {
+  if (isAuthenticated()) {
+    // Authenticated - hide login, show app (will be rendered by render() call later)
+    document.getElementById('loginScreen').style.display = 'none';
+  } else {
+    // Not authenticated - show login, hide app
+    document.querySelector('.app').style.display = 'none';
+    var bottomTabs = document.getElementById('bottomTabs');
+    if (bottomTabs) bottomTabs.style.display = 'none';
+    var hamburger = document.querySelector('.hamburger');
+    if (hamburger) hamburger.style.display = 'none';
+    // Wait for GSI library to load then init
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initGoogleSignIn);
+    } else {
+      setTimeout(initGoogleSignIn, 100);
+    }
+  }
+})();
+// ---- END GOOGLE AUTH ----
 
 // App version and updates
 var APP_VERSION = '2026-05-03-2';
@@ -1296,6 +1520,57 @@ function closeMobileMore() {
   // Restore correct tab highlight
   updateBottomTabs();
 }
+
+// --- PULL-TO-REFRESH for PWA ---
+(function() {
+  var ptrStartY = 0;
+  var ptrDist = 0;
+  var ptrActive = false;
+  var ptrThreshold = 80;
+  var ptrMax = 120;
+
+  document.addEventListener('touchstart', function(e) {
+    if (window.scrollY === 0 && window.innerWidth <= 768) {
+      ptrStartY = e.touches[0].clientY;
+      ptrActive = true;
+      ptrDist = 0;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!ptrActive) return;
+    ptrDist = e.touches[0].clientY - ptrStartY;
+    if (ptrDist < 0) { ptrDist = 0; return; }
+    if (ptrDist > ptrMax) ptrDist = ptrMax;
+    var indicator = document.getElementById('ptrIndicator');
+    if (!indicator) return;
+    var h = Math.min(ptrDist * 0.6, 60);
+    indicator.style.height = h + 'px';
+    var spinner = indicator.querySelector('.ptr-spinner');
+    if (spinner) spinner.style.transform = 'rotate(' + (ptrDist * 3) + 'deg)';
+    var txt = indicator.querySelector('.ptr-text');
+    if (txt) txt.textContent = ptrDist >= ptrThreshold ? 'Release to refresh' : 'Pull to refresh';
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!ptrActive) return;
+    ptrActive = false;
+    var indicator = document.getElementById('ptrIndicator');
+    if (ptrDist >= ptrThreshold) {
+      // Trigger refresh
+      if (indicator) {
+        indicator.style.height = '50px';
+        indicator.classList.add('refreshing');
+        var txt = indicator.querySelector('.ptr-text');
+        if (txt) txt.textContent = 'Refreshing...';
+      }
+      setTimeout(function() { window.location.reload(); }, 400);
+    } else {
+      if (indicator) indicator.style.height = '0';
+    }
+    ptrDist = 0;
+  }, { passive: true });
+})();
 
 // Close sidebar when nav link clicked on mobile
 document.addEventListener('click', function(e) {
@@ -1662,7 +1937,8 @@ function getDefaultData() {
     weeklyTargets: [],
     savedJobs: [],
     dreamJob: null,
-    jobPreferences: { qualified: [], disqualified: [] }
+    jobPreferences: { qualified: [], disqualified: [] },
+    _deletedTargetIds: []
   };
 }
 
@@ -1746,6 +2022,17 @@ function loadData() {
     }
   }
 
+  // Collect _deletedTargetIds from all sources and filter out resurrected targets
+  const deletedIds = new Set();
+  for (const s of sources) {
+    for (const id of (s._deletedTargetIds || [])) deletedIds.add(id);
+  }
+  if (deletedIds.size > 0) {
+    merged.weeklyTargets = merged.weeklyTargets.filter(t => !deletedIds.has(t.weekId));
+    merged._deletedTargetIds = Array.from(deletedIds);
+    console.log('[CRM] Filtered out ' + deletedIds.size + ' deleted target week(s)');
+  }
+
   console.log('[CRM] Merged data loaded: ' + countItems(merged) + ' total items');
   return merged;
 }
@@ -1792,6 +2079,17 @@ async function loadDataWithCloud() {
     const ct = (cloudData.jobPreferences.qualified || []).length + (cloudData.jobPreferences.disqualified || []).length;
     const dt = DATA.jobPreferences ? (DATA.jobPreferences.qualified || []).length + (DATA.jobPreferences.disqualified || []).length : 0;
     if (ct > dt) { DATA.jobPreferences = cloudData.jobPreferences; changed = true; }
+  }
+
+  // Filter out deleted targets after cloud merge
+  const deletedIds = new Set(DATA._deletedTargetIds || []);
+  // Also collect from cloud in case cloud has deletions we don't
+  for (const id of (cloudData._deletedTargetIds || [])) deletedIds.add(id);
+  if (deletedIds.size > 0) {
+    const before = DATA.weeklyTargets.length;
+    DATA.weeklyTargets = DATA.weeklyTargets.filter(t => !deletedIds.has(t.weekId));
+    DATA._deletedTargetIds = Array.from(deletedIds);
+    if (DATA.weeklyTargets.length !== before) changed = true;
   }
 
   if (changed) {
@@ -5634,6 +5932,9 @@ function saveTarget(existingWeekId) {
 function deleteTarget(weekId) {
   if (!confirm('Delete targets for this week?')) return;
   DATA.weeklyTargets = (DATA.weeklyTargets || []).filter(t => t.weekId !== weekId);
+  // Track deletion so merge logic won't resurrect it from backup/cloud
+  if (!DATA._deletedTargetIds) DATA._deletedTargetIds = [];
+  if (!DATA._deletedTargetIds.includes(weekId)) DATA._deletedTargetIds.push(weekId);
   saveData(DATA);
   toast('Targets deleted');
   render();
@@ -7076,9 +7377,11 @@ function inboxManualJob() {
 }
 
 // ---- INIT ----
-render();
-// Load cloud data async (merges and re-renders if cloud has newer data)
-loadDataWithCloud();
+if (isAuthenticated()) {
+  render();
+  // Load cloud data async (merges and re-renders if cloud has newer data)
+  loadDataWithCloud();
+}
 </script>
 </body>
 </html>
