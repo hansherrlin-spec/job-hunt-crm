@@ -1227,7 +1227,7 @@
       <span class="btab-icon">&#128188;</span>
       <span>Jobs</span>
     </button>
-    <button class="btab" data-tab="pipeline" onclick="switchTab('contacts')">
+    <button class="btab" data-tab="pipeline" onclick="switchTab('companies_swipe')">
       <span class="btab-icon">&#128101;</span>
       <span>Pipeline</span>
     </button>
@@ -1466,6 +1466,7 @@ var PAGE_TO_TAB = {
   inbox: 'more',
   contacts: 'pipeline',
   companies: 'pipeline',
+  companies_swipe: 'pipeline',
   headhunters: 'more',
   activities: 'activity',
   dialogues: 'activity',
@@ -1582,6 +1583,164 @@ document.addEventListener('click', function(e) {
   }
 });
 
+
+// === COMPANY SWIPE EVALUATION ===
+let coSwipeIndex = 0;
+let coSwipeDecision = null; // null, 'interested', 'pass'
+
+function getCompaniesToReview() {
+  if (!DATA.companies) return [];
+  return DATA.companies.filter(c => !c.evaluation);
+}
+
+function renderCompanySwipe() {
+  if (!DATA.companies) DATA.companies = [];
+  var toReview = getCompaniesToReview();
+  var total = DATA.companies.length;
+  var interested = DATA.companies.filter(c => c.evaluation === 'interested').length;
+  var passed = DATA.companies.filter(c => c.evaluation === 'pass').length;
+
+  if (coSwipeIndex >= toReview.length) coSwipeIndex = Math.max(0, toReview.length - 1);
+
+  var html = '<div class="page-header"><h2>Evaluate Companies</h2></div>';
+
+  // Stats bar
+  html += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">';
+  html += '<span class="badge badge-gray">' + total + ' total</span>';
+  if (interested) html += '<span class="badge badge-green">' + interested + ' interested</span>';
+  if (passed) html += '<span class="badge badge-red">' + passed + ' passed</span>';
+  html += '<span class="badge badge-blue">' + toReview.length + ' to review</span>';
+  html += '</div>';
+
+  // Switch to list view
+  html += '<div style="text-align:right;margin-bottom:8px;"><a style="font-size:12px;cursor:pointer;color:var(--primary);" onclick="currentPage=\'companies\';render();">List view</a></div>';
+
+  if (toReview.length === 0) {
+    html += '<div class="empty"><div class="icon">&#10024;</div><div>All companies reviewed!</div>';
+    html += '<button class="btn btn-primary" style="margin-top:12px;" onclick="openCompanyForm()">Add a company</button></div>';
+    return html;
+  }
+
+  var c = toReview[coSwipeIndex];
+  var contactCount = DATA.contacts ? DATA.contacts.filter(function(ct) { return ct.company === c.name; }).length : 0;
+
+  html += '<div class="swipe-counter">' + (coSwipeIndex + 1) + ' of ' + toReview.length + ' to review</div>';
+
+  html += '<div class="swipe-container">';
+  html += '<div class="swipe-card" id="swipeCard">';
+
+  // Verdict stamps
+  html += '<div class="swipe-verdict like" id="swipeLike">Interested</div>';
+  html += '<div class="swipe-verdict pass" id="swipePass">Pass</div>';
+
+  // Company icon
+  html += '<div style="text-align:center;margin-bottom:12px;">';
+  html += '<div style="width:56px;height:56px;border-radius:14px;background:var(--primary-light);display:inline-flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;">&#127970;</div>';
+  html += '<div style="font-size:20px;font-weight:700;">' + escHtml(c.name) + '</div>';
+  if (c.industry) html += '<div style="font-size:14px;color:var(--text-light);margin-top:2px;">' + escHtml(c.industry) + '</div>';
+  if (c.location) html += '<div style="font-size:13px;color:var(--text-muted);margin-top:2px;">&#128205; ' + escHtml(c.location) + '</div>';
+  html += '</div>';
+
+  // Info grid
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px;">';
+  if (c.size) html += '<div style="background:var(--bg);padding:8px 10px;border-radius:8px;"><span style="color:var(--text-light);">Size:</span> <strong>' + escHtml(c.size) + '</strong></div>';
+  if (c.priority) html += '<div style="background:var(--bg);padding:8px 10px;border-radius:8px;"><span style="color:var(--text-light);">Priority:</span> <strong>' + escHtml(c.priority) + '</strong></div>';
+  if (c.status && c.status !== 'researching') html += '<div style="background:var(--bg);padding:8px 10px;border-radius:8px;"><span style="color:var(--text-light);">Status:</span> <strong>' + escHtml(c.status) + '</strong></div>';
+  html += '<div style="background:var(--bg);padding:8px 10px;border-radius:8px;"><span style="color:var(--text-light);">Contacts:</span> <strong>' + contactCount + '</strong></div>';
+  html += '</div>';
+
+  // Why interested (if set)
+  if (c.whyInterested) {
+    html += '<div style="font-size:12px;color:var(--text-light);margin-top:4px;background:var(--bg);padding:10px 12px;border-radius:8px;line-height:1.5;">';
+    html += '<strong style="color:var(--text);">Why interested:</strong><br>' + escHtml(c.whyInterested.substring(0, 200)) + (c.whyInterested.length > 200 ? '...' : '');
+    html += '</div>';
+  }
+
+  // Notes
+  if (c.notes) {
+    html += '<div style="font-size:12px;color:var(--text-light);margin-top:8px;text-align:center;line-height:1.5;">' + escHtml(c.notes.substring(0, 150)) + (c.notes.length > 150 ? '...' : '') + '</div>';
+  }
+
+  // Website link
+  if (c.website) html += '<div style="text-align:center;margin-top:8px;"><a href="' + escHtml(c.website) + '" target="_blank" style="font-size:12px;">Visit website &#8599;</a></div>';
+
+  html += '</div>'; // swipe-card
+  html += '</div>'; // swipe-container
+
+  // Action buttons
+  html += '<div class="swipe-actions">';
+  html += '<button class="swipe-btn reject" onclick="companySwipeDecide(\'pass\')" title="Pass">&#10007;</button>';
+  html += '<button class="swipe-btn info" onclick="openCompanyForm(\'' + c.id + '\')" title="Edit details">&#9998;</button>';
+  html += '<button class="swipe-btn approve" onclick="companySwipeDecide(\'interested\')" title="Interested">&#10003;</button>';
+  html += '</div>';
+
+  // Comment panel (shown after swipe decision)
+  if (coSwipeDecision) {
+    var isPositive = coSwipeDecision === 'interested';
+    var decColor = isPositive ? 'var(--success)' : 'var(--danger)';
+    var decIcon = isPositive ? '&#10003;' : '&#10007;';
+    var decLabel = isPositive ? 'Interested' : 'Pass';
+
+    html += '<div style="max-width:420px;margin:16px auto 0;background:var(--card);border-radius:16px;padding:20px;box-shadow:var(--shadow-lg);border-top:4px solid ' + decColor + ';">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">';
+    html += '<span style="font-size:20px;color:' + decColor + ';">' + decIcon + '</span>';
+    html += '<span style="font-size:16px;font-weight:700;color:' + decColor + ';">' + decLabel + ': ' + escHtml(c.name) + '</span></div>';
+    html += '<div style="font-size:13px;color:var(--text-light);margin-bottom:8px;">' + (isPositive ? 'Why are you interested in this company?' : 'Why are you passing on this company?') + '</div>';
+    html += '<input id="coSwipeComment" type="text" placeholder="Your reason..." style="width:100%;padding:12px;font-size:15px;border:2px solid ' + decColor + ';border-radius:10px;box-sizing:border-box;font-family:inherit;outline:none;" autofocus onkeydown="if(event.key===\'Enter\')confirmCompanySwipe()">';
+    html += '<div style="display:flex;gap:8px;margin-top:12px;">';
+    html += '<button class="btn" style="flex:1;background:' + decColor + ';color:white;justify-content:center;min-height:44px;font-size:15px;" onclick="confirmCompanySwipe()">' + decLabel + '</button>';
+    html += '<button class="btn btn-ghost" style="flex:1;justify-content:center;min-height:44px;" onclick="cancelCompanySwipe()">Cancel</button>';
+    html += '</div></div>';
+  }
+
+  return html;
+}
+
+function companySwipeDecide(decision) {
+  coSwipeDecision = decision;
+  var card = document.getElementById('swipeCard');
+  if (card) {
+    card.classList.add(decision === 'interested' ? 'fly-right' : 'fly-left');
+  }
+  setTimeout(function() { render(); }, 100);
+}
+
+function confirmCompanySwipe() {
+  var toReview = getCompaniesToReview();
+  if (toReview.length === 0) return;
+  var c = toReview[coSwipeIndex];
+
+  var commentEl = document.getElementById('coSwipeComment');
+  var comment = commentEl ? commentEl.value.trim() : '';
+
+  if (!comment) {
+    toast('Please provide a reason for your decision');
+    if (commentEl) { commentEl.style.borderColor = 'var(--danger)'; commentEl.focus(); }
+    return;
+  }
+
+  c.evaluation = coSwipeDecision;
+  c.evaluationReason = comment;
+  c.evaluatedAt = today();
+
+  // Update status based on evaluation
+  if (coSwipeDecision === 'interested' && (!c.status || c.status === 'researching')) {
+    c.status = 'researching';
+    if (c.priority === 'low') c.priority = 'medium';
+  } else if (coSwipeDecision === 'pass') {
+    c.status = 'not-interested';
+  }
+
+  coSwipeDecision = null;
+  saveData(DATA);
+  toast(c.evaluation === 'interested' ? 'Interested: ' + c.name : 'Passed: ' + c.name);
+  render();
+}
+
+function cancelCompanySwipe() {
+  coSwipeDecision = null;
+  render();
+}
 
 // === SWIPE JOB BOARD ===
 let swipeIndex = 0;
@@ -1808,9 +1967,10 @@ function cycleDimScore(jobId, dimKey, maxPts) {
 }
 
 // Touch swipe gestures
-function initSwipeGestures() {
+function initSwipeGestures(mode) {
   var card = document.getElementById('swipeCard');
-  if (!card || swipeDecision) return;
+  var activeDecision = mode === 'company' ? coSwipeDecision : swipeDecision;
+  if (!card || activeDecision) return;
 
   // Remove old listeners by replacing card node (prevents duplicate listeners)
   var newCard = card.cloneNode(true);
@@ -1846,7 +2006,11 @@ function initSwipeGestures() {
       card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
       card.style.transform = 'translateX(' + (dir * window.innerWidth) + 'px) rotate(' + (dir * 20) + 'deg)';
       card.style.opacity = '0';
-      setTimeout(function() { swipeDecide(dx > 0 ? 'approve' : 'reject'); }, 200);
+      if (mode === 'company') {
+        setTimeout(function() { companySwipeDecide(dx > 0 ? 'interested' : 'pass'); }, 200);
+      } else {
+        setTimeout(function() { swipeDecide(dx > 0 ? 'approve' : 'reject'); }, 200);
+      }
     } else {
       resetCard();
     }
@@ -2366,10 +2530,11 @@ function render() {
     case 'dashboard': el.innerHTML = renderDashboard(); break;
     case 'contacts': el.innerHTML = currentDetail ? renderContactDetail(currentDetail) : renderContacts(); break;
     case 'companies': el.innerHTML = currentDetail ? renderCompanyDetail(currentDetail) : renderCompanies(); break;
+    case 'companies_swipe': el.innerHTML = renderCompanySwipe(); setTimeout(function() { initSwipeGestures('company'); }, 50); break;
     case 'headhunters': el.innerHTML = renderHeadhunters(); break;
     case 'activities': el.innerHTML = renderActivities(); break;
     case 'dialogues': el.innerHTML = currentDetail ? renderDialogueDetail(currentDetail) : renderDialogues(); break;
-    case 'jobboard': el.innerHTML = renderSwipeBoard(); setTimeout(initSwipeGestures, 50); break;
+    case 'jobboard': el.innerHTML = renderSwipeBoard(); setTimeout(function() { initSwipeGestures('job'); }, 50); break;
     case 'jobboard_list': el.innerHTML = renderJobBoard(); break;
     case 'applications': el.innerHTML = renderApplications(); break;
     case 'targets': el.innerHTML = renderTargets(); break;
@@ -2389,6 +2554,7 @@ function injectMobileSubNav(container) {
       { page: 'jobboard_list', icon: '&#128203;', label: 'List & Search' }
     ],
     pipeline: [
+      { page: 'companies_swipe', icon: '&#128179;', label: 'Evaluate' },
       { page: 'contacts', icon: '&#128100;', label: 'Contacts' },
       { page: 'companies', icon: '&#127970;', label: 'Companies' }
     ],
@@ -2891,7 +3057,7 @@ function renderCompanies() {
             const contactCount = DATA.contacts.filter(ct => ct.company === c.name).length;
             return `
             <tr class="clickable" onclick="viewCompany('${c.id}')">
-              <td><strong>${escHtml(c.name)}</strong>${c.location ? '<div style="font-size:11px;color:var(--text-light)">'+escHtml(c.location)+'</div>' : ''}</td>
+              <td><strong>${escHtml(c.name)}</strong>${c.evaluation ? '<span class="badge ' + (c.evaluation === 'interested' ? 'badge-green' : 'badge-red') + '" style="margin-left:6px;font-size:9px;">' + (c.evaluation === 'interested' ? '&#10003;' : '&#10007;') + '</span>' : ''}${c.location ? '<div style="font-size:11px;color:var(--text-light)">'+escHtml(c.location)+'</div>' : ''}</td>
               <td style="font-size:12px;">${escHtml(c.industry || '-')}</td>
               <td><span class="badge ${c.priority === 'high' ? 'badge-red' : c.priority === 'medium' ? 'badge-yellow' : 'badge-blue'}">${escHtml(c.priority)}</span></td>
               <td><span style="font-size:12px;">${escHtml(c.status || '-')}</span></td>
@@ -2931,6 +3097,7 @@ function renderCompanyDetail(id) {
         <div><strong>Size:</strong> ${escHtml(c.size || '-')}</div>
         <div><strong>Status:</strong> ${escHtml(c.status || '-')}</div>
       </div>
+      ${c.evaluation ? '<div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:' + (c.evaluation === 'interested' ? 'var(--success-light)' : 'var(--danger-light)') + ';"><strong style="color:' + (c.evaluation === 'interested' ? 'var(--success)' : 'var(--danger)') + ';">' + (c.evaluation === 'interested' ? '&#10003; Interested' : '&#10007; Passed') + '</strong>' + (c.evaluationReason ? '<div style="font-size:13px;margin-top:4px;color:var(--text);">' + escHtml(c.evaluationReason) + '</div>' : '') + (c.evaluatedAt ? '<div style="font-size:11px;color:var(--text-light);margin-top:2px;">Evaluated: ' + escHtml(c.evaluatedAt) + '</div>' : '') + '<button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:11px;" onclick="resetCompanyEvaluation(\'' + c.id + '\')">Re-evaluate</button></div>' : ''}
       ${c.notes ? '<div style="margin-top:14px;"><strong>Notes:</strong><div class="notes-box" style="margin-top:6px;">'+escHtml(c.notes)+'</div></div>' : ''}
       ${c.whyInterested ? '<div style="margin-top:14px;"><strong>Why interested:</strong><div class="notes-box" style="margin-top:6px;">'+escHtml(c.whyInterested)+'</div></div>' : ''}
     </div>
@@ -3389,6 +3556,18 @@ function deleteCompany(id) {
   saveData(DATA);
   toast('Company deleted');
   if (currentDetail === id) currentDetail = null;
+  render();
+}
+
+function resetCompanyEvaluation(id) {
+  var c = DATA.companies.find(function(x) { return x.id === id; });
+  if (!c) return;
+  delete c.evaluation;
+  delete c.evaluationReason;
+  delete c.evaluatedAt;
+  if (c.status === 'not-interested') c.status = 'researching';
+  saveData(DATA);
+  toast('Company queued for re-evaluation');
   render();
 }
 
