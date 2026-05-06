@@ -3225,27 +3225,44 @@ function generateLinkedInMessage(contactId) {
     else if (sizeNum > 200) companyPhase = 'expansionsfas';
   }
 
-  msg += 'Jag har följt ' + companyName + ' ett tag och tilltalas starkt av det ni bygger';
-  if (industry) msg += ' inom ' + industry.toLowerCase();
-  msg += '.';
+  // Build a company-specific insight from available data
+  // Extract keywords from whyInterested/notes to inform tone, but never dump raw notes
+  var hasGlobalAngle = /global|international|export|expansion/i.test(whyInterested + ' ' + companyNotes);
+  var hasProductAngle = /product|hardware|software|saas|platform|tech/i.test(whyInterested + ' ' + companyNotes + ' ' + industry);
+  var hasB2BAngle = /b2b|enterprise|business/i.test(whyInterested + ' ' + companyNotes + ' ' + industry);
+  var isListed = /listed|börs|nasdaq|spotlight|ngm/i.test(whyInterested + ' ' + companyNotes);
+  var hasScaleAngle = /scale|growth|tillväxt|expand/i.test(whyInterested + ' ' + companyNotes);
 
-  // Add specific company insight if available
-  if (whyInterested && whyInterested.length > 10) {
-    // Use whyInterested but rewrite it as a proper sentence
-    msg += ' ' + whyInterested.charAt(0).toUpperCase() + whyInterested.slice(1);
-    if (!whyInterested.endsWith('.')) msg += '.';
+  msg += 'Jag har följt ' + companyName + ' ett tag';
+  if (industry) {
+    msg += ' och tilltalas av det ni bygger inom ' + industry.toLowerCase();
+  }
+  msg += '. ';
+
+  // Build a natural insight sentence from context - never raw notes
+  var insight = '';
+  if (hasGlobalAngle && hasProductAngle) {
+    insight = 'Att skala ett ' + (hasB2BAngle ? 'B2B-' : '') + 'erbjudande internationellt är en utmaning jag känner igen och brinner för';
+  } else if (hasGlobalAngle) {
+    insight = 'Den internationella dimensionen i er verksamhet är något jag kan relatera till efter mina år med global sourcing';
+  } else if (hasScaleAngle || companyPhase) {
+    insight = 'Ni verkar vara i en fas där den kommersiella sidan blir allt viktigare';
+  } else if (hasProductAngle && hasB2BAngle) {
+    insight = 'Att ta en stark produkt till marknaden på rätt sätt är något jag jobbat med i flera roller';
+  } else if (isListed) {
+    insight = 'Kombinationen av er position på marknaden och potentialen framåt är det som fångar mitt intresse';
+  } else if (industry) {
+    insight = 'Er position inom ' + industry.toLowerCase() + ' och vart branschen är på väg gör er extra intressanta';
   }
 
-  // Add growth/phase context
-  if (companyPhase) {
-    msg += ' Ni verkar vara i en ' + companyPhase;
-    if (latestFin && latestFin.revenue) {
-      msg += ' med ' + latestFin.revenue + 'M i omsättning';
+  if (insight) {
+    msg += insight;
+    if (companyPhase && !/fas/.test(insight)) {
+      msg += ', särskilt i den ' + companyPhase + ' ni befinner er i';
     }
-    if (latestFin && latestFin.employees) {
-      msg += ' och ' + latestFin.employees + ' medarbetare';
-    }
-    msg += ' - precis den typ av bolag där jag tror jag kan bidra mest.';
+    msg += '.';
+  } else if (companyPhase) {
+    msg += 'Ni verkar vara i en ' + companyPhase + ' - precis den typ av bolag där jag tror jag kan bidra mest.';
   }
 
   msg += '\n\n';
